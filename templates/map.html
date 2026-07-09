@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Map — PathPulse AI</title>
+  <meta name="description"
+    content="Live pothole map with Google Maps-style navigation, voice guidance, and pothole-aware routing.">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <style>
+    /* ── Full-screen map layout ─────────────────────────── */
+    body {
+      overflow: hidden;
+    }
+
+    .map-section {
+      padding-top: 78px;
+      /* matches actual navbar height */
+      padding-bottom: 0;
+      max-width: 100%;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Override global section-header flex (was side-by-side) ── */
+    .section-header {
+      display: flex !important;
+      flex-direction: column !important;
+      /* stack title ABOVE controls */
+      align-items: flex-start !important;
+      justify-content: flex-start !important;
+      padding: 8px 16px 6px !important;
+      margin-bottom: 0 !important;
+      gap: 5px !important;
+      flex-shrink: 0;
+      background: rgba(244, 247, 251, 0.97);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      min-height: 0;
+    }
+
+    .section-header h3 {
+      font-size: 1rem !important;
+      font-weight: 700 !important;
+      margin: 0 !important;
+      line-height: 1.4 !important;
+      display: block !important;
+      visibility: visible !important;
+      color: var(--text-primary) !important;
+    }
+
+    /* ── Controls row: all items on one line, wraps if needed ── */
+    .map-controls {
+      display: flex !important;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px !important;
+      width: 100%;
+    }
+
+    /* Make search input narrower to save space */
+    .search-container {
+      width: 220px !important;
+    }
+
+    #map-search {
+      font-size: 0.82rem;
+      padding: 7px 12px;
+    }
+
+    /* Compact buttons */
+    .btn-sm {
+      padding: 7px 14px !important;
+      font-size: 0.8rem !important;
+    }
+
+    .search-panel-btn {
+      padding: 4px 10px !important;
+      font-size: 0.75rem !important;
+    }
+
+    .auto-nav-toggle-wrap {
+      padding: 4px 10px !important;
+      font-size: 0.75rem !important;
+    }
+
+    .filter-group {
+      padding: 4px 10px !important;
+      font-size: 0.8rem !important;
+      gap: 8px !important;
+    }
+
+    .mute-btn {
+      font-size: 1rem !important;
+      padding: 4px 6px;
+    }
+
+    /* Keep search-extras on the same line as search box */
+    .search-extras {
+      display: flex !important;
+      gap: 4px !important;
+      margin-top: 0 !important;
+      align-items: center;
+    }
+
+    /* ── Map container takes remaining space ─────────────── */
+    .map-container {
+      flex: 1;
+      min-height: 0;
+      /* critical for flex child to shrink */
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+      border-bottom: none;
+      position: relative;
+    }
+
+    #main-map {
+      height: 100% !important;
+      width: 100%;
+    }
+
+    /* Hide LRM sidebar panel */
+    .leaflet-routing-container {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="bg-mesh"></div>
+
+  <!-- ── Navbar ──────────────────────────────────────────────────── -->
+  <nav class="navbar" id="navbar">
+    <a href="/" class="navbar-brand">
+      <div class="logo-icon">🛣️</div>
+      <div>
+        <h1>PathPulse</h1>
+        <span>AI Pothole Detection</span>
+      </div>
+    </a>
+    <ul class="nav-links">
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/map" class="active">Map</a></li>
+      <li><a href="/detect">Start Ride</a></li>
+      <li><a href="/moderation">Moderation</a></li>
+    </ul>
+  </nav>
+
+  <!-- ── Map ─────────────────────────────────────────────────────── -->
+  <section class="map-section" id="map-section">
+    <div class="section-header">
+      <h3>🗺️ Live <span class="gradient-text">Pothole Map</span></h3>
+
+      <!-- ── Map Controls Row (single flex row) ─────────────────── -->
+      <div class="map-controls">
+
+        <!-- Search box — dropdown panels anchor to this -->
+        <div class="search-container" style="width:220px; position:relative; flex-shrink:0;">
+          <input type="text" id="map-search" placeholder="Search destination..." autocomplete="off">
+          <div id="search-suggestions" class="search-suggestions"></div>
+
+          <!-- Recent Destinations dropdown -->
+          <div id="recent-dest-panel" class="dest-panel">
+            <div class="dest-panel-header">🕐 Recent</div>
+            <div id="recent-dest-list"></div>
+          </div>
+
+          <!-- Favourites dropdown -->
+          <div id="fav-dest-panel" class="dest-panel">
+            <div class="dest-panel-header">⭐ Favourites</div>
+            <div id="fav-dest-list"></div>
+          </div>
+        </div>
+
+        <!-- Recent / Favourites / Auto-Nav — inline with the search box -->
+        <button class="search-panel-btn" id="btn-recent" onclick="toggleRecentPanel()" title="Recent Destinations">
+          🕐 Recent
+        </button>
+        <button class="search-panel-btn" id="btn-favs" onclick="toggleFavPanel()" title="Favourite Destinations">
+          ⭐ Favs
+        </button>
+        <label class="auto-nav-toggle-wrap" title="Auto-start navigation when destination selected">
+          <input type="checkbox" id="auto-nav-toggle"> Auto-Nav
+        </label>
+
+        <!-- Divider -->
+        <span style="width:1px; height:20px; background:var(--border-strong); flex-shrink:0;"></span>
+
+        <!-- Severity filters -->
+        <div class="filter-group">
+          <label class="filter-label" style="color:var(--info);"><input type="checkbox" id="filter-low" checked
+              onchange="filterMarkers()"> Low</label>
+          <label class="filter-label" style="color:var(--warning);"><input type="checkbox" id="filter-medium" checked
+              onchange="filterMarkers()"> Medium</label>
+          <label class="filter-label" style="color:var(--danger);"><input type="checkbox" id="filter-high" checked
+              onchange="filterMarkers()"> High</label>
+        </div>
+
+        <!-- Divider -->
+        <span style="width:1px; height:20px; background:var(--border-strong); flex-shrink:0;"></span>
+
+        <!-- Utility buttons -->
+        <button class="mute-btn" id="btn-mute" onclick="toggleMute()" title="Mute/Unmute Audio Warnings">🔊</button>
+        <button class="btn btn-primary btn-sm" id="btn-locate" onclick="locateUser()">
+          📍 My Location
+        </button>
+        <button class="btn btn-secondary btn-sm" id="btn-refresh-map" onclick="refreshMap()">
+          🔄 Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="map-container">
+
+      <!-- ── Route Info Bar (top-center of map) ─────────────────────── -->
+      <div id="route-info" class="route-info">
+        🛣️ Route: <span id="route-distance" style="font-weight:800; color:var(--accent);">0</span> km
+        &nbsp;
+        <!-- Navigation action buttons -->
+        <div class="nav-btn-group">
+          <button class="btn-nav-start" id="btn-start-nav" onclick="startNavigation()" style="display:none;"
+            title="Begin live navigation along this route">
+            🚗 Start Navigation
+          </button>
+          <button class="btn-nav-stop" id="btn-stop-nav" onclick="stopNavigation()" style="display:none;"
+            title="Stop navigation mode">
+            ✋ Stop Navigation
+          </button>
+        </div>
+        <button onclick="clearRoute()"
+          style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1.1rem;margin-left:12px;padding:4px;"
+          title="Clear Route">✖</button>
+      </div>
+
+      <!-- ── Pothole Warning Card (Phase 5) ─────────────────────────── -->
+      <div id="pothole-warning-card" class="pothole-warning-card">
+        <!-- Populated by navigation.js -->
+      </div>
+
+      <!-- ── Navigation Dashboard (Phase 2) ────────────────────────── -->
+      <div id="nav-dashboard" class="nav-dashboard">
+        <!-- Header bar -->
+        <div class="nav-dashboard-header">
+          <div class="nav-title">
+            🚗 PathPulse Navigation
+          </div>
+          <span class="nav-status-badge navigating" id="nav-status-badge">
+            <span id="nav-status-text">Navigating</span>
+          </span>
+        </div>
+
+        <!-- Stats row: distance / ETA / speed / accuracy -->
+        <div class="nav-stats-row">
+          <div class="nav-stat">
+            <span class="ns-label">Distance</span>
+            <span class="ns-value" id="dash-distance">—</span>
+          </div>
+          <div class="nav-stat">
+            <span class="ns-label">ETA</span>
+            <span class="ns-value" id="dash-eta">—</span>
+          </div>
+          <div class="nav-stat">
+            <span class="ns-label">Speed</span>
+            <span class="ns-value" id="dash-speed">0 km/h</span>
+          </div>
+          <div class="nav-stat">
+            <span class="ns-label">GPS ±</span>
+            <span class="ns-value" id="dash-accuracy">—</span>
+          </div>
+        </div>
+
+        <!-- Next turn instruction row -->
+        <div class="nav-next-turn-row">
+          <span class="nt-label">Next</span>
+          <span class="nt-value" id="dash-next-turn">⬆️ Follow the route</span>
+        </div>
+      </div>
+
+      <!-- ── The Leaflet Map ─────────────────────────────────────────── -->
+      <div id="main-map"></div>
+    </div>
+  </section>
+
+  <!-- ── Toast Notification Container (Phase 6) ─────────────────────── -->
+  <div id="toast-container"></div>
+
+  <!-- ── Scripts ─────────────────────────────────────────────────────── -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+  <!-- map.js must load before navigation.js -->
+  <script src="{{ url_for('static', filename='js/map.js') }}"></script>
+
+  <!-- navigation.js — all navigation phases 1–8 -->
+  <script src="{{ url_for('static', filename='js/navigation.js') }}"></script>
+
+  <script>
+    // Register PWA Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(() => console.log("Service Worker Registered"));
+    }
+
+    // Close dest panels when clicking anywhere on map
+    document.getElementById('main-map').addEventListener('click', () => {
+      const rp = document.getElementById('recent-dest-panel');
+      const fp = document.getElementById('fav-dest-panel');
+      if (rp) rp.style.display = 'none';
+      if (fp) fp.style.display = 'none';
+    });
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PathPulse AI — Detection Ride Mode</title>
+  <meta name="description" content="Start a detection ride to find potholes on the road using your phone's sensors.">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+  <div class="bg-mesh"></div>
+
+  <!-- ── Navbar ──────────────────────────────────────────────────── -->
+  <nav class="navbar" id="navbar">
+    <a href="/" class="navbar-brand">
+      <div class="logo-icon">🛣️</div>
+      <div>
+        <h1>PathPulse</h1>
+        <span>Detection Mode</span>
+      </div>
+    </a>
+    <ul class="nav-links">
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/map">Map</a></li>
+      <li><a href="/detect" class="active">Start Ride</a></li>
+      <li><a href="/moderation">Moderation</a></li>
+    </ul>
+  </nav>
+
+  <!-- ── Detection Layout ────────────────────────────────────────── -->
+  <div class="detect-page">
+    <div class="detect-container">
+      <!-- Left Panel -->
+        <!-- Offline status banner -->
+        <div class="offline-banner" id="offline-banner" style="display: none;">
+          ⚠️ Running Offline — reports will be queued locally.
+        </div>
+
+        <!-- Status Card -->
+        <div class="panel-card">
+          <h4 style="display:flex; align-items:center;">⚡ Detection Status <button class="mute-btn" id="btn-mute" onclick="toggleMute()" title="Mute/Unmute sound alerts" style="margin-left:auto;">🔊</button></h4>
+          <div class="status-indicator idle" id="status-indicator">
+            <span class="status-dot"></span>
+            <span id="status-text">Ready — Tap Start to begin</span>
+          </div>
+          <div style="margin-top: 16px; display: flex; gap: 10px;">
+            <button class="btn btn-primary btn-sm" id="btn-start" onclick="startDetection()" style="flex:1;">
+              ▶ Start
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btn-stop" onclick="stopDetection()" disabled style="flex:1;">
+              ⏹ Stop
+            </button>
+          </div>
+        </div>
+
+        <!-- Accelerometer Card -->
+        <div class="panel-card">
+          <h4>📊 Accelerometer Data</h4>
+          <div class="accel-display">
+            <div class="accel-axis x">
+              <div class="axis-label">X</div>
+              <div class="axis-value" id="accel-x">0.0</div>
+            </div>
+            <div class="accel-axis y">
+              <div class="axis-label">Y</div>
+              <div class="axis-value" id="accel-y">0.0</div>
+            </div>
+            <div class="accel-axis z">
+              <div class="axis-label">Z</div>
+              <div class="axis-value" id="accel-z">0.0</div>
+            </div>
+          </div>
+          <div
+            style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">
+            <span>Magnitude</span>
+            <span id="magnitude-value">0.0 m/s²</span>
+          </div>
+          <div class="magnitude-bar">
+            <div class="magnitude-fill" id="magnitude-fill"></div>
+          </div>
+          <div class="accel-chart-card">
+            <canvas id="accel-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Detection Log -->
+        <div class="panel-card" style="flex:1; min-height:0;">
+          <h4>📋 Detection Log <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);"
+              id="log-count">0 detections</span></h4>
+          <div class="detection-log" id="detection-log">
+            <div style="text-align:center; color:var(--text-muted); padding:30px 0; font-size:0.85rem;">
+              No potholes detected yet.<br>Start a ride to begin scanning.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: Map -->
+      <div id="detect-map"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="{{ url_for('static', filename='js/detect.js') }}"></script>
+  <script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js')
+    .then(() => console.log("Service Worker Registered"));
+}
+</script>
+</body>
+
+</html>

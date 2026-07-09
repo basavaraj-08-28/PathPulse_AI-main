@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PathPulse AI — Smart Pothole Detection & Mapping</title>
+  <meta name="description"
+    content="PathPulse AI uses your phone's accelerometer to detect potholes in real-time and maps them so every driver knows the road ahead.">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+  <div class="bg-mesh"></div>
+
+  <!-- ── Navbar ──────────────────────────────────────────────────── -->
+  <nav class="navbar" id="navbar">
+    <a href="/" class="navbar-brand">
+      <div class="logo-icon">🛣️</div>
+      <div>
+        <h1>PathPulse</h1>
+        <span>AI Pothole Detection</span>
+      </div>
+    </a>
+    <ul class="nav-links">
+      <li><a href="/" class="active">Dashboard</a></li>
+      <li><a href="/map">Map</a></li>
+      <li><a href="/detect">Start Ride</a></li>
+      <li><a href="/moderation">Moderation</a></li>
+    </ul>
+  </nav>
+
+  <!-- ── Hero ────────────────────────────────────────────────────── -->
+  <section class="hero" id="hero">
+    <div class="hero-badge">
+      <span class="pulse-dot"></span>
+      Real-Time Detection Active
+    </div>
+    <h2>
+      Detect Potholes.<br>
+      <span class="gradient-text">Protect Riders.</span>
+    </h2>
+    <p>
+      PathPulse uses your phone's accelerometer to automatically detect road damage
+      and warn every rider before they hit a pothole.
+    </p>
+    <div class="hero-actions">
+      <a href="/detect" class="btn btn-primary" id="btn-start-ride">
+        📡 Start Detection Ride
+      </a>
+      <a href="/map" class="btn btn-secondary" id="btn-view-map">
+        🗺️ View Pothole Map
+      </a>
+    </div>
+  </section>
+
+  <!-- ── Stats ───────────────────────────────────────────────────── -->
+  <section class="stats-grid" id="stats-section">
+    <div class="stat-card">
+      <div class="stat-icon">📍</div>
+      <div class="stat-value" id="stat-total">0</div>
+      <div class="stat-label">Total Reported</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">⚠️</div>
+      <div class="stat-value" id="stat-active">0</div>
+      <div class="stat-label">Active Potholes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">✅</div>
+      <div class="stat-value" id="stat-resolved">0</div>
+      <div class="stat-label">Resolved</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">🔴</div>
+      <div class="stat-value" id="stat-high">0</div>
+      <div class="stat-label">High Severity</div>
+    </div>
+  </section>
+
+  <!-- ── Charts Section ──────────────────────────────────────────── -->
+  <section class="charts-grid" id="charts-section">
+    <div class="chart-card">
+      <h4>📊 Severity Distribution</h4>
+      <div class="chart-container">
+        <canvas id="severity-chart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h4>📅 Weekly Reports Activity</h4>
+      <div class="chart-container">
+        <canvas id="weekly-chart"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- Map section removed, see map.html -->
+  <!-- ── How It Works ────────────────────────────────────────────── -->
+  <section class="how-it-works" id="how-it-works">
+    <h3>How <span class="gradient-text">PathPulse</span> Works</h3>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-icon">📱</div>
+        <div class="step-number">1</div>
+        <h4>Open & Ride</h4>
+        <p>Open PathPulse on your phone and start your ride. The app runs in the background while you navigate.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-icon">📊</div>
+        <div class="step-number">2</div>
+        <h4>Auto-Detect</h4>
+        <p>Our AI analyzes accelerometer spikes in real-time to identify potholes as you ride over them.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-icon">🗺️</div>
+        <div class="step-number">3</div>
+        <h4>Map & Alert</h4>
+        <p>Detected potholes are instantly pinned on the live map, warning other riders about road hazards ahead.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ──────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <p>© 2026 <a href="/">PathPulse AI</a> — Making roads safer, one ride at a time.</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+  <script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js')
+    .then(() => console.log("Service Worker Registered"));
+}
+</script>
+</body>
+
+</html>
