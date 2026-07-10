@@ -1,7 +1,7 @@
 {
-  "name": "PathPulse AI Pothole Detection",
+  "name": "PathPulse AI Pathole Detection",
   "short_name": "PathPulse",
-  "description": "Smart pothole detection and road mapping system using mobile sensor telemetry.",
+  "description": "Smart pathole detection and road mapping system using mobile sensor telemetry.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f4f7fb",
@@ -42,7 +42,7 @@
     {
       "name": "Start Ride",
       "short_name": "Ride",
-      "description": "Start a pothole detection ride",
+      "description": "Start a pathole detection ride",
       "url": "/detect",
       "icons": [
         {
@@ -54,7 +54,7 @@
     {
       "name": "View Map",
       "short_name": "Map",
-      "description": "View live pothole map",
+      "description": "View live pathole map",
       "url": "/map",
       "icons": [
         {

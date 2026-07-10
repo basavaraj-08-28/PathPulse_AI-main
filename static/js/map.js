@@ -1,6 +1,6 @@
 /**
  * PathPulse AI — Dashboard Map Script
- * Initializes the main map and loads pothole markers
+ * Initializes the main map and loads pathole markers
  */
 
 // ── Map Initialization ──────────────────────────────────────────────
@@ -50,9 +50,9 @@ const SEVERITY_RADIUS = {
 };
 
 // ── Added Feature State ─────────────────────────────────────────────
-let allPotholesData = [];
-window.allPotholesData = allPotholesData;  // Expose for navigation.js
-let alertedPotholes = new Set();
+let allPatholesData = [];
+window.allPatholesData = allPatholesData;  // Expose for navigation.js
+let alertedPatholes = new Set();
 let isMuted = false;
 
 
@@ -95,7 +95,7 @@ function showUserLocation(lat, lng, accuracy, centerMap = true, pos = null) {
     window.routingControl.spliceWaypoints(0, 1, L.latLng(lat, lng));
   }
 
-  // Check proximity to potholes
+  // Check proximity to patholes
   checkProximity(lat, lng);
 
   // ── Navigation GPS hook — navigation.js subscribes here ──────────
@@ -162,14 +162,14 @@ function locateUser() {
   );
 }
 
-// ── Pothole Markers Layer ───────────────────────────────────────────
-let potholeLayer = L.layerGroup().addTo(map);
+// ── Pathole Markers Layer ───────────────────────────────────────────
+let patholeLayer = L.layerGroup().addTo(map);
 
-function createPotholeMarker(pothole) {
-  const color = SEVERITY_COLORS[pothole.severity] || SEVERITY_COLORS.medium;
-  const radius = SEVERITY_RADIUS[pothole.severity] || 10;
+function createPatholeMarker(pathole) {
+  const color = SEVERITY_COLORS[pathole.severity] || SEVERITY_COLORS.medium;
+  const radius = SEVERITY_RADIUS[pathole.severity] || 10;
 
-  const marker = L.circleMarker([pothole.latitude, pothole.longitude], {
+  const marker = L.circleMarker([pathole.latitude, pathole.longitude], {
     radius: radius,
     fillColor: color,
     fillOpacity: 0.8,
@@ -178,14 +178,14 @@ function createPotholeMarker(pothole) {
     opacity: 0.9
   });
 
-  const date = pothole.created_at ? new Date(pothole.created_at).toLocaleDateString() : 'Unknown';
+  const date = pathole.created_at ? new Date(pathole.created_at).toLocaleDateString() : 'Unknown';
 
   marker.bindPopup(`
-    <div class="popup-title">🕳️ Pothole Detected</div>
-    <span class="popup-severity ${pothole.severity}">${pothole.severity.toUpperCase()}</span>
+    <div class="popup-title">🕳️ Pathole Detected</div>
+    <span class="popup-severity ${pathole.severity}">${pathole.severity.toUpperCase()}</span>
     <div class="popup-meta">
-      <div>📍 ${pothole.latitude.toFixed(5)}, ${pothole.longitude.toFixed(5)}</div>
-      <div>📊 Reports: ${pothole.report_count} | Confidence: ${(pothole.confidence * 100).toFixed(0)}%</div>
+      <div>📍 ${pathole.latitude.toFixed(5)}, ${pathole.longitude.toFixed(5)}</div>
+      <div>📊 Reports: ${pathole.report_count} | Confidence: ${(pathole.confidence * 100).toFixed(0)}%</div>
       <div>📅 ${date}</div>
     </div>
   `);
@@ -193,31 +193,31 @@ function createPotholeMarker(pothole) {
   return marker;
 }
 
-// ── Load Potholes ───────────────────────────────────────────────────
-async function loadPotholes() {
+// ── Load Patholes ───────────────────────────────────────────────────
+async function loadPatholes() {
   try {
-    const res = await fetch('/api/potholes');
+    const res = await fetch('/api/patholes');
     const data = await res.json();
 
-    if (data.potholes) {
-      allPotholesData = data.potholes;
-      window.allPotholesData = allPotholesData;  // Keep window reference fresh
+    if (data.patholes) {
+      allPatholesData = data.patholes;
+      window.allPatholesData = allPatholesData;  // Keep window reference fresh
       filterMarkers();
 
       // Fit map bounds to markers if no user location
-      if (!userLocationMarker && potholeLayer.getLayers().length > 0) {
-        const group = L.featureGroup(potholeLayer.getLayers());
+      if (!userLocationMarker && patholeLayer.getLayers().length > 0) {
+        const group = L.featureGroup(patholeLayer.getLayers());
         map.fitBounds(group.getBounds().pad(0.2));
       }
     }
   } catch (err) {
-    console.error('Failed to load potholes:', err);
+    console.error('Failed to load patholes:', err);
   }
 }
 
 // ── Refresh ─────────────────────────────────────────────────────────
 function refreshMap() {
-  loadPotholes();
+  loadPatholes();
 }
 
 // ── Routing & Search ────────────────────────────────────────────────
@@ -389,18 +389,18 @@ window.clearRoute = function() {
 // ── Added Helper Functions ──────────────────────────────────────────
 
 window.filterMarkers = function() {
-  potholeLayer.clearLayers();
+  patholeLayer.clearLayers();
   const showLow = document.getElementById('filter-low')?.checked ?? true;
   const showMed = document.getElementById('filter-medium')?.checked ?? true;
   const showHigh = document.getElementById('filter-high')?.checked ?? true;
 
-  allPotholesData.forEach(p => {
+  allPatholesData.forEach(p => {
     if (p.severity === 'low' && !showLow) return;
     if (p.severity === 'medium' && !showMed) return;
     if (p.severity === 'high' && !showHigh) return;
 
-    const marker = createPotholeMarker(p);
-    potholeLayer.addLayer(marker);
+    const marker = createPatholeMarker(p);
+    patholeLayer.addLayer(marker);
   });
 };
 
@@ -415,19 +415,19 @@ window.toggleMute = function() {
 
 // Proximity Warning helpers
 function checkProximity(lat, lng) {
-  if (isMuted || allPotholesData.length === 0) return;
-  allPotholesData.forEach(p => {
+  if (isMuted || allPatholesData.length === 0) return;
+  allPatholesData.forEach(p => {
     const dist = getDistance(lat, lng, p.latitude, p.longitude);
     if (dist <= 50) {
-      if (!alertedPotholes.has(p.id)) {
-        alertedPotholes.add(p.id);
+      if (!alertedPatholes.has(p.id)) {
+        alertedPatholes.add(p.id);
         playAlertSound();
         setTimeout(() => {
-          speakAlert(`Warning: ${p.severity} severity pothole ahead.`);
+          speakAlert(`Warning: ${p.severity} severity pathole ahead.`);
         }, 400);
       }
     } else if (dist > 100) {
-      alertedPotholes.delete(p.id);
+      alertedPatholes.delete(p.id);
     }
   });
 }
@@ -474,14 +474,14 @@ function speakAlert(text) {
   }
 }
 
-// Manual Pothole Reporting on Map click/contextmenu
+// Manual Pathole Reporting on Map click/contextmenu
 map.on('contextmenu', function(e) {
   const lat = e.latlng.lat;
   const lng = e.latlng.lng;
   
   const popupContent = `
     <form class="manual-report-form" onsubmit="submitManualReport(event)">
-      <h4>🕳️ Report Pothole</h4>
+      <h4>🕳️ Report Pathole</h4>
       <input type="hidden" id="manual-lat" value="${lat}">
       <input type="hidden" id="manual-lng" value="${lng}">
       <div class="form-group">
@@ -516,7 +516,7 @@ window.submitManualReport = async function(event) {
   const accelPeak = severity === 'high' ? 26.0 : severity === 'medium' ? 18.0 : 10.0;
 
   try {
-    const res = await fetch('/api/potholes', {
+    const res = await fetch('/api/patholes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -532,20 +532,20 @@ window.submitManualReport = async function(event) {
     const data = await res.json();
     if (data.status === 'success') {
       map.closePopup();
-      alert("Pothole reported successfully!");
-      loadPotholes();
+      alert("Pathole reported successfully!");
+      loadPatholes();
     } else {
       alert("Failed to report: " + data.message);
     }
   } catch (err) {
-    console.error("Error reporting manual pothole:", err);
+    console.error("Error reporting manual pathole:", err);
     alert("Network error. Queueing reports offline is active on Detection ride page.");
   }
 };
 
 // ── Initial Load ────────────────────────────────────────────────────
 setupSearch();
-loadPotholes();
+loadPatholes();
 
 // Auto-locate on load
 locateUser();

@@ -3,7 +3,7 @@
  * ══════════════════════════════════════════════════
  * Implements Phases 1–8 of the navigation upgrade.
  * Depends on map.js being loaded first (uses window.ppMap,
- * window.routingControl, window.allPotholesData, window.getDirections).
+ * window.routingControl, window.allPatholesData, window.getDirections).
  *
  * GPS hook: map.js calls window.onNavGPSUpdate(lat, lng, pos) on every fix.
  */
@@ -21,7 +21,7 @@ const NAV = {
   routeSteps:         [],       // Turn-by-turn instruction steps
   currentStepIndex:   0,        // Which step we've reached
   spokenInstructions: new Set(),// Step indices already spoken
-  spokenPotholes:     new Set(),// Pothole IDs already warned about
+  spokenPatholes:     new Set(),// Pathole IDs already warned about
   lastLat:            null,
   lastLon:            null,
   lastTimestamp:      null,
@@ -93,7 +93,7 @@ window.startNavigation = function(destLat, destLon, destName) {
   NAV.destName       = destName || 'Destination';
   NAV.currentStepIndex   = 0;
   NAV.spokenInstructions = new Set();
-  NAV.spokenPotholes     = new Set();
+  NAV.spokenPatholes     = new Set();
   NAV.recalcCooldown     = false;
 
   // Extract route data from existing routingControl
@@ -129,7 +129,7 @@ window.stopNavigation = function() {
   document.getElementById('nav-dashboard').style.display = 'none';
   document.getElementById('btn-start-nav').style.display = 'inline-flex';
   document.getElementById('btn-stop-nav').style.display  = 'none';
-  hidePotholeWarning();
+  hidePatholeWarning();
 
   speakNav('Navigation stopped.');
   showToast('Navigation stopped.', 'info');
@@ -179,8 +179,8 @@ window.onNavGPSUpdate = function(lat, lng, pos) {
   // ── Phase 3: Route deviation check ───────────────────────────────
   checkRouteDeviation(lat, lng);
 
-  // ── Phase 5: Pothole proximity check ─────────────────────────────
-  checkPotholeProximityNav(lat, lng);
+  // ── Phase 5: Pathole proximity check ─────────────────────────────
+  checkPatholeProximityNav(lat, lng);
 
   // ── Phase 4: Turn-by-turn voice ───────────────────────────────────
   checkNextTurnInstruction(lat, lng);
@@ -407,23 +407,23 @@ function formatInstruction(step) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   PHASE 5 — Pothole-Aware Navigation Warnings
+   PHASE 5 — Pathole-Aware Navigation Warnings
    ═══════════════════════════════════════════════════════════════════════ */
 
-const POTHOLE_WARN_DISTANCE_M = 40; // metres
+const PATHOLE_WARN_DISTANCE_M = 40; // metres
 
-function checkPotholeProximityNav(lat, lng) {
-  const potholes = window.allPotholesData || [];
-  if (potholes.length === 0) return;
+function checkPatholeProximityNav(lat, lng) {
+  const patholes = window.allPatholesData || [];
+  if (patholes.length === 0) return;
 
-  // Find the closest pothole within warning distance
+  // Find the closest pathole within warning distance
   let closest     = null;
   let closestDist = Infinity;
 
-  potholes.forEach(p => {
+  patholes.forEach(p => {
     if (!p.is_active) return;
     const d = haversineMeters(lat, lng, p.latitude, p.longitude);
-    if (d <= POTHOLE_WARN_DISTANCE_M && d < closestDist) {
+    if (d <= PATHOLE_WARN_DISTANCE_M && d < closestDist) {
       closest     = p;
       closestDist = d;
     }
@@ -431,33 +431,33 @@ function checkPotholeProximityNav(lat, lng) {
 
   if (closest) {
     // Show floating warning card
-    showPotholeWarning(closest, Math.round(closestDist));
+    showPatholeWarning(closest, Math.round(closestDist));
 
-    // Speak once per pothole per approach
-    if (!NAV.spokenPotholes.has(closest.id)) {
-      NAV.spokenPotholes.add(closest.id);
-      speakNav(`Warning. ${closest.severity} severity pothole ahead in ${Math.round(closestDist)} metres.`);
+    // Speak once per pathole per approach
+    if (!NAV.spokenPatholes.has(closest.id)) {
+      NAV.spokenPatholes.add(closest.id);
+      speakNav(`Warning. ${closest.severity} severity pathole ahead in ${Math.round(closestDist)} metres.`);
     }
   } else {
-    hidePotholeWarning();
-    // Clear potholes that are now far away so we can warn again on next approach
-    potholes.forEach(p => {
+    hidePatholeWarning();
+    // Clear patholes that are now far away so we can warn again on next approach
+    patholes.forEach(p => {
       const d = haversineMeters(lat, lng, p.latitude, p.longitude);
-      if (d > 80) NAV.spokenPotholes.delete(p.id);
+      if (d > 80) NAV.spokenPatholes.delete(p.id);
     });
   }
 }
 
-function showPotholeWarning(pothole, distMetres) {
-  const card = document.getElementById('pothole-warning-card');
+function showPatholeWarning(pathole, distMetres) {
+  const card = document.getElementById('pathole-warning-card');
   if (!card) return;
 
-  const sev = pothole.severity.toUpperCase();
-  const emoji = pothole.severity === 'high' ? '🔴' : pothole.severity === 'medium' ? '🟡' : '🟢';
+  const sev = pathole.severity.toUpperCase();
+  const emoji = pathole.severity === 'high' ? '🔴' : pathole.severity === 'medium' ? '🟡' : '🟢';
   card.innerHTML = `
     <div class="pw-icon">⚠️</div>
     <div class="pw-content">
-      <div class="pw-title">${emoji} ${sev} Pothole Ahead</div>
+      <div class="pw-title">${emoji} ${sev} Pathole Ahead</div>
       <div class="pw-dist">${distMetres} metres</div>
     </div>
   `;
@@ -465,8 +465,8 @@ function showPotholeWarning(pothole, distMetres) {
   card.classList.add('pw-visible');
 }
 
-function hidePotholeWarning() {
-  const card = document.getElementById('pothole-warning-card');
+function hidePatholeWarning() {
+  const card = document.getElementById('pathole-warning-card');
   if (!card) return;
   card.classList.remove('pw-visible');
   // Delay hiding so the CSS animation plays out

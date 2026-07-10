@@ -1,6 +1,6 @@
-# 🛣️ PathPulse AI — Smart Pothole Detection & Mapping System
+# 🛣️ PathPulse AI — Smart Pathole Detection & Mapping System
 
-PathPulse AI is a modern, real-time web application designed to automatically detect road anomalies (specifically potholes) using a phone's built-in accelerometer and GPS sensors. It dynamically logs and pins detected hazards to a global interactive map, warning other road users and routing them safely around high-severity issues.
+PathPulse AI is a modern, real-time web application designed to automatically detect road anomalies (specifically patholes) using a phone's built-in accelerometer and GPS sensors. It dynamically logs and pins detected hazards to a global interactive map, warning other road users and routing them safely around high-severity issues.
 
 ---
 
@@ -8,11 +8,11 @@ PathPulse AI is a modern, real-time web application designed to automatically de
 
 *   **Real-time Sensor Processing:** Uses browser-level accelerometer access (`DeviceMotionEvent`) to calculate instantaneous vertical acceleration changes.
 *   **Intelligent Severity Mapping:** Automatically categorizes road damage severity (Low, Medium, High) based on peak acceleration spikes (m/s²).
-*   **GPS-driven Heatmaps:** Displays potholes on an interactive leaflet map with dynamic markers and popup overlays.
-*   **Smart Clustering & Deduplication:** Avoids duplicate reports. Detections within a 20-meter threshold of an existing pothole increment its confidence score and count rather than creating new pins.
-*   **Routing & Directions:** Integration with Leaflet Routing Machine to calculate route distances and display alternative pathways avoiding high-impact potholes.
+*   **GPS-driven Heatmaps:** Displays patholes on an interactive leaflet map with dynamic markers and popup overlays.
+*   **Smart Clustering & Deduplication:** Avoids duplicate reports. Detections within a 20-meter threshold of an existing pathole increment its confidence score and count rather than creating new pins.
+*   **Routing & Directions:** Integration with Leaflet Routing Machine to calculate route distances and display alternative pathways avoiding high-impact patholes.
 *   **Integrated Location Search:** Search places and get routing using the Komoot Photon geocoder API.
-*   **Interactive Simulation Fallback:** Safe desktop fallback simulator that automatically generates random road noise and occasional pothole spikes for testing and validation.
+*   **Interactive Simulation Fallback:** Safe desktop fallback simulator that automatically generates random road noise and occasional pathole spikes for testing and validation.
 *   **Modern Premium Dashboard:** Designed with premium glassmorphism styling, a floating particle mesh background, interactive counters, and fluid CSS transitions.
 
 ---
@@ -43,7 +43,7 @@ PathPulse_AI/
 │
 ├── templates/                  # Frontend pages
 │   ├── index.html              # Main dashboard overview and stats
-│   ├── map.html                # Dedicated routing and pothole map
+│   ├── map.html                # Dedicated routing and pathole map
 │   └── detect.html             # Mobile-optimized accelerometer logging page
 │
 └── static/                     # Assets and static code
@@ -72,9 +72,9 @@ where $g \approx 9.81 \text{ m/s}^2$ representing the baseline acceleration due 
 
 ### 2. Proximity Clustering
 To prevent map spamming:
-*   When a pothole is detected at $(Lat, Lng)$, the server checks if another active pothole exists within a threshold range of `0.0002` coordinates (approximately 20 meters).
-*   If found, the server updates the existing pothole record, increasing the count: `report_count += 1` and scaling confidence: `confidence = min(1.0, confidence + 0.1)`.
-*   If the pothole is reported more than 5 times, it is upgraded to **Medium** severity. More than 10 times is upgraded to **High** severity.
+*   When a pathole is detected at $(Lat, Lng)$, the server checks if another active pathole exists within a threshold range of `0.0002` coordinates (approximately 20 meters).
+*   If found, the server updates the existing pathole record, increasing the count: `report_count += 1` and scaling confidence: `confidence = min(1.0, confidence + 0.1)`.
+*   If the pathole is reported more than 5 times, it is upgraded to **Medium** severity. More than 10 times is upgraded to **High** severity.
 
 ---
 
@@ -118,15 +118,15 @@ Make sure you have **Python 3.8+** installed on your machine.
 
 ## 🔌 API Reference
 
-### 1. Get Potholes
-*   **Endpoint:** `GET /api/potholes`
+### 1. Get Patholes
+*   **Endpoint:** `GET /api/patholes`
 *   **Query Params (Optional - Bounding Box):** `lat_min`, `lat_max`, `lng_min`, `lng_max`
 *   **Response:**
     ```json
     {
       "status": "success",
       "count": 1,
-      "potholes": [
+      "patholes": [
         {
           "id": 1,
           "latitude": 13.0827,
@@ -144,8 +144,8 @@ Make sure you have **Python 3.8+** installed on your machine.
     }
     ```
 
-### 2. Report a Pothole
-*   **Endpoint:** `POST /api/potholes`
+### 2. Report a Pathole
+*   **Endpoint:** `POST /api/patholes`
 *   **Request Body:**
     ```json
     {
@@ -159,19 +159,19 @@ Make sure you have **Python 3.8+** installed on your machine.
     ```json
     {
       "status": "success",
-      "message": "New pothole reported",
-      "pothole": { ... }
+      "message": "New pathole reported",
+      "pathole": { ... }
     }
     ```
 
-### 3. Resolve a Pothole
-Marks a reported pothole as resolved/fixed (soft deletes it from live viewing layers).
-*   **Endpoint:** `POST /api/potholes/<int:pothole_id>/resolve`
+### 3. Resolve a Pathole
+Marks a reported pathole as resolved/fixed (soft deletes it from live viewing layers).
+*   **Endpoint:** `POST /api/patholes/<int:pathole_id>/resolve`
 *   **Response:**
     ```json
     {
       "status": "success",
-      "message": "Pothole marked as resolved"
+      "message": "Pathole marked as resolved"
     }
     ```
 
@@ -183,7 +183,7 @@ Returns aggregate dashboard metrics.
     {
       "status": "success",
       "stats": {
-        "active_potholes": 12,
+        "active_patholes": 12,
         "high_severity": 3,
         "resolved": 5,
         "total_reported": 17
@@ -198,7 +198,7 @@ Returns aggregate dashboard metrics.
 For developer testing on desktops without real accelerometer support:
 1.  Navigate to the `/detect` page and click **Start**.
 2.  The application will automatically detect the absence of accelerometer data and switch to **Simulation Mode**.
-3.  Simulated road vibration values will populate the dashboard metrics, with a 5% chance of generating a pothole detection event on randomized geographic offsets.
+3.  Simulated road vibration values will populate the dashboard metrics, with a 5% chance of generating a pathole detection event on randomized geographic offsets.
 
 ---
 

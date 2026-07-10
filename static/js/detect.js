@@ -1,6 +1,6 @@
 /**
- * PathPulse AI — Pothole Detection Engine
- * Uses phone accelerometer + GPS to detect and report potholes in real-time
+ * PathPulse AI — Pathole Detection Engine
+ * Uses phone accelerometer + GPS to detect and report patholes in real-time
  */
 
 // ── State ───────────────────────────────────────────────────────────
@@ -9,13 +9,13 @@ let watchId = null;
 let detectionCount = 0;
 let lastReportTime = 0;
 const REPORT_COOLDOWN = 2000; // ms between reports (avoid duplicates)
-const POTHOLE_THRESHOLD = 18; // m/s² — spike threshold for detection
+const PATHOLE_THRESHOLD = 18; // m/s² — spike threshold for detection
 const GRAVITY = 9.81;
 
 // ── Added Feature State ─────────────────────────────────────────────
 let isMuted = false;
-let alertedPotholes = new Set();
-let allPotholesData = [];
+let alertedPatholes = new Set();
+let allPatholesData = [];
 
 // IndexedDB database setup
 let dbPromise = null;
@@ -25,8 +25,8 @@ function initIndexedDB() {
     const request = indexedDB.open('PathPulseOffline', 1);
     request.onupgradeneeded = (e) => {
       const db = e.target.result;
-      if (!db.objectStoreNames.contains('potholes')) {
-        db.createObjectStore('potholes', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('patholes')) {
+        db.createObjectStore('patholes', { keyPath: 'id' });
       }
     };
     request.onsuccess = (e) => resolve(e.target.result);
@@ -53,10 +53,10 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r
 let userMarker = null;
 let routeLine = null;
 const routeCoords = [];
-const potholeLayer = L.layerGroup().addTo(map);
+const patholeLayer = L.layerGroup().addTo(map);
 
-// Load existing potholes
-loadExistingPotholes();
+// Load existing patholes
+loadExistingPatholes();
 
 // ── Severity Colors ─────────────────────────────────────────────────
 const SEVERITY_COLORS = {
@@ -173,7 +173,7 @@ function startSimulatedAccelerometer() {
     let y = (Math.random() - 0.5) * 3;
     let z = GRAVITY + (Math.random() - 0.5) * 2;
 
-    // Random pothole spike (~5% chance)
+    // Random pathole spike (~5% chance)
     if (Math.random() < 0.05) {
       const spike = 15 + Math.random() * 20;
       z += spike * (Math.random() > 0.5 ? 1 : -1);
@@ -205,9 +205,9 @@ function processAccelData(x, y, z) {
   fill.style.width = barPercent + '%';
 
   // Color the bar based on intensity
-  if (deviation > POTHOLE_THRESHOLD) {
+  if (deviation > PATHOLE_THRESHOLD) {
     fill.style.background = 'linear-gradient(90deg, #f59e0b, #ef4444)';
-  } else if (deviation > POTHOLE_THRESHOLD * 0.6) {
+  } else if (deviation > PATHOLE_THRESHOLD * 0.6) {
     fill.style.background = 'linear-gradient(90deg, #06d6a0, #f59e0b)';
   } else {
     fill.style.background = 'var(--gradient-1)';
@@ -224,11 +224,11 @@ function processAccelData(x, y, z) {
     accelChart.update('none'); // Silent update for performance
   }
 
-  // Detect pothole: spike above threshold
+  // Detect pathole: spike above threshold
   const now = Date.now();
-  if (deviation > POTHOLE_THRESHOLD && (now - lastReportTime) > REPORT_COOLDOWN) {
+  if (deviation > PATHOLE_THRESHOLD && (now - lastReportTime) > REPORT_COOLDOWN) {
     lastReportTime = now;
-    onPotholeDetected(deviation);
+    onPatholeDetected(deviation);
   }
 }
 
@@ -282,7 +282,7 @@ function onPositionUpdate(position) {
 
   map.panTo([lat, lng]);
 
-  // Check proximity to potholes
+  // Check proximity to patholes
   checkProximity(lat, lng);
 }
 
@@ -295,13 +295,13 @@ function onPositionError(err) {
       lng: 80.2707 + (Math.random() - 0.5) * 0.01
     };
     updateStatus('detecting', '🔍 Scanning (GPS simulated)');
-    // Check proximity to potholes with simulated GPS coords
+    // Check proximity to patholes with simulated GPS coords
     checkProximity(currentPosition.lat, currentPosition.lng);
   }
 }
 
-// ── Pothole Detected! ───────────────────────────────────────────────
-async function onPotholeDetected(accelPeak) {
+// ── Pathole Detected! ───────────────────────────────────────────────
+async function onPatholeDetected(accelPeak) {
   detectionCount++;
 
   // Determine position
@@ -322,7 +322,7 @@ async function onPotholeDetected(accelPeak) {
   else severity = 'low';
 
   // Flash status
-  updateStatus('alert', `🚨 POTHOLE DETECTED — ${severity.toUpperCase()}`);
+  updateStatus('alert', `🚨 PATHOLE DETECTED — ${severity.toUpperCase()}`);
   setTimeout(() => {
     if (isDetecting) updateStatus('detecting', '🔍 Scanning road surface...');
   }, 2000);
@@ -335,10 +335,10 @@ async function onPotholeDetected(accelPeak) {
     fillOpacity: 0.85,
     color: '#fff',
     weight: 2
-  }).addTo(potholeLayer);
+  }).addTo(patholeLayer);
 
   marker.bindPopup(`
-    <div class="popup-title">🕳️ Pothole Detected</div>
+    <div class="popup-title">🕳️ Pathole Detected</div>
     <span class="popup-severity ${severity}">${severity.toUpperCase()}</span>
     <div class="popup-meta">
       <div>📊 Acceleration: ${accelPeak.toFixed(1)} m/s²</div>
@@ -351,10 +351,10 @@ async function onPotholeDetected(accelPeak) {
 
   // Report to server / offline queue
   if (!navigator.onLine) {
-    saveOfflinePothole(lat, lng, accelPeak);
+    saveOfflinePathole(lat, lng, accelPeak);
   } else {
     try {
-      await fetch('/api/potholes', {
+      await fetch('/api/patholes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -366,7 +366,7 @@ async function onPotholeDetected(accelPeak) {
       });
     } catch (err) {
       console.warn('Network request failed, queueing offline:', err);
-      saveOfflinePothole(lat, lng, accelPeak);
+      saveOfflinePathole(lat, lng, accelPeak);
     }
   }
 }
@@ -402,15 +402,15 @@ function addLogEntry(severity, lat, lng, accelPeak) {
   countEl.textContent = detectionCount + ' detection' + (detectionCount !== 1 ? 's' : '');
 }
 
-// ── Load Existing Potholes ──────────────────────────────────────────
-async function loadExistingPotholes() {
+// ── Load Existing Patholes ──────────────────────────────────────────
+async function loadExistingPatholes() {
   try {
-    const res = await fetch('/api/potholes');
+    const res = await fetch('/api/patholes');
     const data = await res.json();
-    if (data.potholes) {
-      allPotholesData = data.potholes;
-      potholeLayer.clearLayers();
-      allPotholesData.forEach(p => {
+    if (data.patholes) {
+      allPatholesData = data.patholes;
+      patholeLayer.clearLayers();
+      allPatholesData.forEach(p => {
         const color = SEVERITY_COLORS[p.severity] || SEVERITY_COLORS.medium;
         L.circleMarker([p.latitude, p.longitude], {
           radius: p.severity === 'high' ? 13 : p.severity === 'medium' ? 10 : 8,
@@ -419,7 +419,7 @@ async function loadExistingPotholes() {
           color: '#fff',
           weight: 1,
           opacity: 0.6
-        }).addTo(potholeLayer).bindPopup(`
+        }).addTo(patholeLayer).bindPopup(`
           <div class="popup-title">🕳️ Previously Reported</div>
           <span class="popup-severity ${p.severity}">${p.severity.toUpperCase()}</span>
           <div class="popup-meta">
@@ -429,7 +429,7 @@ async function loadExistingPotholes() {
       });
     }
   } catch (e) {
-    console.error('Failed to load existing potholes:', e);
+    console.error('Failed to load existing patholes:', e);
   }
 }
 
@@ -500,19 +500,19 @@ window.toggleMute = function() {
 
 // Proximity Warnings
 function checkProximity(lat, lng) {
-  if (isMuted || allPotholesData.length === 0) return;
-  allPotholesData.forEach(p => {
+  if (isMuted || allPatholesData.length === 0) return;
+  allPatholesData.forEach(p => {
     const dist = getDistance(lat, lng, p.latitude, p.longitude);
     if (dist <= 50) {
-      if (!alertedPotholes.has(p.id)) {
-        alertedPotholes.add(p.id);
+      if (!alertedPatholes.has(p.id)) {
+        alertedPatholes.add(p.id);
         playAlertSound();
         setTimeout(() => {
-          speakAlert(`Warning: ${p.severity} severity pothole ahead.`);
+          speakAlert(`Warning: ${p.severity} severity pathole ahead.`);
         }, 400);
       }
     } else if (dist > 100) {
-      alertedPotholes.delete(p.id);
+      alertedPatholes.delete(p.id);
     }
   });
 }
@@ -560,11 +560,11 @@ function speakAlert(text) {
 }
 
 // IndexedDB Offline operations
-function saveOfflinePothole(lat, lng, accelPeak) {
+function saveOfflinePathole(lat, lng, accelPeak) {
   if (!dbPromise) return;
   dbPromise.then(db => {
-    const tx = db.transaction('potholes', 'readwrite');
-    tx.objectStore('potholes').put({
+    const tx = db.transaction('patholes', 'readwrite');
+    tx.objectStore('patholes').put({
       id: Date.now() + Math.random(),
       latitude: lat,
       longitude: lng,
@@ -581,36 +581,36 @@ function saveOfflinePothole(lat, lng, accelPeak) {
 function syncOfflineQueue() {
   if (!navigator.onLine || !dbPromise) return;
   dbPromise.then(db => {
-    const tx = db.transaction('potholes', 'readonly');
-    return tx.objectStore('potholes').getAll();
-  }).then(async (queuedPotholes) => {
-    if (!queuedPotholes || queuedPotholes.length === 0) return;
+    const tx = db.transaction('patholes', 'readonly');
+    return tx.objectStore('patholes').getAll();
+  }).then(async (queuedPatholes) => {
+    if (!queuedPatholes || queuedPatholes.length === 0) return;
     
     const banner = document.getElementById('offline-banner');
     if (banner) {
       banner.className = 'offline-banner synced';
-      banner.textContent = `🔄 Syncing ${queuedPotholes.length} offline reports...`;
+      banner.textContent = `🔄 Syncing ${queuedPatholes.length} offline reports...`;
       banner.style.display = 'flex';
     }
 
     let successCount = 0;
-    for (const p of queuedPotholes) {
+    for (const p of queuedPatholes) {
       try {
-        const res = await fetch('/api/potholes', {
+        const res = await fetch('/api/patholes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(p)
         });
         if (res.ok) {
           await dbPromise.then(db => {
-            const deleteTx = db.transaction('potholes', 'readwrite');
-            deleteTx.objectStore('potholes').delete(p.id);
+            const deleteTx = db.transaction('patholes', 'readwrite');
+            deleteTx.objectStore('patholes').delete(p.id);
             return deleteTx.complete;
           });
           successCount++;
         }
       } catch (e) {
-        console.error("Failed to upload queued pothole:", e);
+        console.error("Failed to upload queued pathole:", e);
       }
     }
     
@@ -621,7 +621,7 @@ function syncOfflineQueue() {
           banner.style.display = 'none';
         }, 3000);
       }
-      loadExistingPotholes();
+      loadExistingPatholes();
     } else {
       updateOfflineUI();
     }
@@ -635,12 +635,12 @@ function updateOfflineUI() {
   if (!navigator.onLine) {
     if (dbPromise) {
       dbPromise.then(db => {
-        const tx = db.transaction('potholes', 'readonly');
-        return tx.objectStore('potholes').count();
+        const tx = db.transaction('patholes', 'readonly');
+        return tx.objectStore('patholes').count();
       }).then(count => {
         banner.style.display = 'flex';
         banner.className = 'offline-banner';
-        banner.textContent = `⚠️ Running Offline — ${count} pothole report(s) queued locally.`;
+        banner.textContent = `⚠️ Running Offline — ${count} pathole report(s) queued locally.`;
       });
     } else {
       banner.style.display = 'flex';

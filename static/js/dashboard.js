@@ -11,7 +11,7 @@ async function loadStats() {
     const data = await res.json();
     if (data.stats) {
       animateCounter('stat-total', data.stats.total_reported);
-      animateCounter('stat-active', data.stats.active_potholes);
+      animateCounter('stat-active', data.stats.active_patholes);
       animateCounter('stat-resolved', data.stats.resolved);
       animateCounter('stat-high', data.stats.high_severity);
       
@@ -68,7 +68,7 @@ function renderCharts(stats) {
       data: {
         labels: weeklyData.labels,
         datasets: [{
-          label: 'Potholes Reported',
+          label: 'Patholes Reported',
           data: weeklyData.data,
           backgroundColor: 'rgba(5, 150, 105, 0.85)',
           hoverBackgroundColor: '#059669',

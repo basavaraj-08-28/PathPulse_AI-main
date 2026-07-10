@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PathPulse AI — Smart Pathole Detection & Mapping</title>
   <meta name="description"
-    content="PathPulse AI uses your phone's accelerometer to detect potholes in real-time and maps them so every driver knows the road ahead.">
+    content="PathPulse AI uses your phone's accelerometer to detect patholes in real-time and maps them so every driver knows the road ahead.">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -115,7 +115,7 @@
         <div class="step-icon">📊</div>
         <div class="step-number">2</div>
         <h4>Auto-Detect</h4>
-        <p>Our AI analyzes accelerometer spikes in real-time to identify potholes as you ride over them.</p>
+        <p>Our AI analyzes accelerometer spikes in real-time to identify patholes as you ride over them.</p>
       </div>
       <div class="step-card">
         <div class="step-icon">🗺️</div>
@@ -134,11 +134,11 @@
   <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
   <script src="{{ url_for('static', filename='js/pwa-install.js') }}"></script>
   <script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js')
-    .then(() => console.log("Service Worker Registered"));
-}
-</script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(() => console.log("Service Worker Registered"));
+    }
+  </script>
 </body>
 
 </html>
