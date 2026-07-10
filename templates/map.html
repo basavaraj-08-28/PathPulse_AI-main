@@ -19,7 +19,7 @@
     }
 
     .map-section {
-      padding-top: 78px;
+      padding-top: 72px;
       /* matches actual navbar height */
       padding-bottom: 0;
       max-width: 100%;
@@ -43,6 +43,10 @@
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border);
       min-height: 0;
+      /* ── Fix: allow suggestions dropdown to overflow into map ── */
+      position: relative;
+      z-index: 600;
+      overflow: visible;
     }
 
     .section-header h3 {
@@ -149,7 +153,7 @@
       <li><a href="/">Dashboard</a></li>
       <li><a href="/map" class="active">Map</a></li>
       <li><a href="/detect">Start Ride</a></li>
-      <li><a href="/moderation">Moderation</a></li>
+      <li><a href="/admin">Admin</a></li>
     </ul>
   </nav>
 

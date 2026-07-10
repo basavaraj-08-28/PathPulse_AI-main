@@ -449,7 +449,7 @@ body {
   border-radius: var(--radius-sm);
   margin-top: 4px;
   box-shadow: var(--shadow-lg);
-  z-index: 2000;
+  z-index: 3000;           /* above all Leaflet layers (max ~1000) and nav dashboard */
   max-height: 250px;
   overflow-y: auto;
   display: none;

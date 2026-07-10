@@ -1,8 +1,9 @@
-const CACHE_NAME = 'pathpulse-cache-v2';
+const CACHE_NAME = 'pathpulse-cache-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/map',
   '/detect',
+  '/admin',
   '/static/css/style.css',
   '/static/js/dashboard.js',
   '/static/js/detect.js',

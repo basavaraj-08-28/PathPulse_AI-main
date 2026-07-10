@@ -3,7 +3,7 @@ PathPulse AI - Pothole Detection & Mapping System
 Backend API built with Flask
 """
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime, timezone
@@ -74,10 +74,40 @@ def detect():
     return render_template('detect.html')
 
 
-@app.route('/moderation')
-def moderation_page():
-    """Serve the pothole moderation page"""
-    return render_template('moderation.html')
+@app.route('/admin')
+def admin_page():
+    """Serve the admin portal page"""
+    return render_template('admin.html')
+
+
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    """Authenticate admin credentials and set session"""
+    data = request.get_json() or {}
+    username = data.get('username')
+    password = data.get('password')
+
+    expected_user = os.getenv('ADMIN_USER', 'basavarajyn123@gmail.com')
+    expected_pass = os.getenv('ADMIN_PASSWORD', 'admin123')
+
+    if username == expected_user and password == expected_pass:
+        session['admin_logged_in'] = True
+        return jsonify({'status': 'success', 'message': 'Logged in successfully'})
+    return jsonify({'status': 'error', 'message': 'Invalid credentials'}), 401
+
+
+@app.route('/api/admin/logout', methods=['POST'])
+def admin_logout():
+    """Clear admin session"""
+    session.pop('admin_logged_in', None)
+    return jsonify({'status': 'success', 'message': 'Logged out successfully'})
+
+
+@app.route('/api/admin/check', methods=['GET'])
+def admin_check():
+    """Verify if admin session is active"""
+    is_logged_in = session.get('admin_logged_in', False)
+    return jsonify({'logged_in': is_logged_in})
 
 
 @app.route('/api/potholes', methods=['GET'])
@@ -176,11 +206,52 @@ def report_pothole():
 @app.route('/api/potholes/<int:pothole_id>/resolve', methods=['POST'])
 def resolve_pothole(pothole_id):
     """Mark a pothole as resolved/fixed"""
+    if not session.get('admin_logged_in'):
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
     pothole = Pothole.query.get_or_404(pothole_id)
     pothole.is_active = False
     pothole.updated_at = datetime.now(timezone.utc)
     db.session.commit()
     return jsonify({'status': 'success', 'message': 'Pothole marked as resolved'})
+
+
+@app.route('/api/potholes/<int:pothole_id>/edit', methods=['POST', 'PUT'])
+def edit_pothole(pothole_id):
+    """Update pothole details"""
+    if not session.get('admin_logged_in'):
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    
+    pothole = Pothole.query.get_or_404(pothole_id)
+    data = request.get_json() or {}
+    
+    try:
+        pothole.latitude = float(data['latitude'])
+        pothole.longitude = float(data['longitude'])
+        pothole.severity = data.get('severity', pothole.severity)
+        pothole.confidence = float(data.get('confidence', pothole.confidence))
+        pothole.is_active = bool(data.get('is_active', pothole.is_active))
+        pothole.updated_at = datetime.now(timezone.utc)
+        
+        db.session.commit()
+        return jsonify({
+            'status': 'success', 
+            'message': 'Pothole updated successfully',
+            'pothole': pothole.to_dict()
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+
+@app.route('/api/potholes/<int:pothole_id>/delete', methods=['DELETE', 'POST'])
+def delete_pothole(pothole_id):
+    """Permanently delete a pothole report"""
+    if not session.get('admin_logged_in'):
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    
+    pothole = Pothole.query.get_or_404(pothole_id)
+    db.session.delete(pothole)
+    db.session.commit()
+    return jsonify({'status': 'success', 'message': 'Pothole deleted permanently'})
 
 
 @app.route('/api/stats', methods=['GET'])

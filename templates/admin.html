@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Portal — PathPulse AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <style>
+    /* ── Login screen specific styles ── */
+    .login-container {
+      max-width: 420px;
+      margin: 150px auto 40px;
+      padding: 32px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      backdrop-filter: blur(24px);
+      box-shadow: var(--shadow-lg);
+      text-align: center;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .login-logo {
+      font-size: 3rem;
+      margin-bottom: 12px;
+    }
+
+    .login-title {
+      font-size: 1.6rem;
+      font-weight: 800;
+      background: var(--gradient-1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 24px;
+    }
+
+    .login-form-group {
+      margin-bottom: 18px;
+      text-align: left;
+    }
+
+    .login-form-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .login-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: #ffffff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: var(--transition);
+    }
+
+    .login-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .login-error {
+      color: var(--danger);
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-top: 12px;
+      display: none;
+    }
+
+    /* ── Dashboard specific styles ── */
+    .admin-dashboard {
+      display: none; /* Shown dynamically if check logged_in succeeds */
+      animation: fadeIn 0.5s ease;
+    }
+
+    .admin-stats {
+      margin-top: -10px;
+      margin-bottom: 30px;
+    }
+
+    /* ── Modal overlay for edits ── */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(8px);
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.25s ease;
+    }
+
+    .admin-modal {
+      width: 100%;
+      max-width: 480px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      transform: translateY(20px);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .modal-overlay.show .admin-modal {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      padding: 18px 24px;
+      background: var(--gradient-1);
+      color: #ffffff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      font-size: 1.15rem;
+      font-weight: 800;
+      margin: 0;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: #ffffff;
+      font-size: 1.4rem;
+      cursor: pointer;
+      line-height: 1;
+      opacity: 0.8;
+      transition: opacity 0.2s;
+    }
+
+    .modal-close:hover {
+      opacity: 1;
+    }
+
+    .modal-body {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      background: var(--bg-primary);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="bg-mesh"></div>
+
+  <!-- ── Navbar ──────────────────────────────────────────────────── -->
+  <nav class="navbar" id="navbar">
+    <a href="/" class="navbar-brand">
+      <div class="logo-icon">🛣️</div>
+      <div>
+        <h1>PathPulse</h1>
+        <span>Admin Portal</span>
+      </div>
+    </a>
+    <ul class="nav-links">
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/map">Map</a></li>
+      <li><a href="/detect">Start Ride</a></li>
+      <li><a href="/admin" class="active">Admin</a></li>
+    </ul>
+  </nav>
+
+  <!-- ── 1. Login View Overlay ────────────────────────────────────── -->
+  <div id="login-view" class="login-container">
+    <div class="login-logo">🔑</div>
+    <h2 class="login-title">Admin Login</h2>
+    <form id="login-form" onsubmit="handleLogin(event)">
+      <div class="login-form-group">
+        <label for="username">USERNAME</label>
+        <input type="text" id="username" class="login-input" required placeholder="admin" autocomplete="username">
+      </div>
+      <div class="login-form-group">
+        <label for="password">PASSWORD</label>
+        <input type="password" id="password" class="login-input" required placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+        Sign In
+      </button>
+      <div id="login-error" class="login-error">Invalid admin credentials. Please try again.</div>
+    </form>
+  </div>
+
+  <!-- ── 2. Admin Dashboard View ──────────────────────────────────── -->
+  <main id="admin-dashboard-view" class="moderation-page admin-dashboard">
+    
+    <!-- Admin stats summary widgets -->
+    <section class="stats-grid admin-stats">
+      <div class="stat-card">
+        <div class="stat-icon">📊</div>
+        <div class="stat-value" id="admin-stat-total">0</div>
+        <div class="stat-label">Total Reports</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-value" id="admin-stat-active">0</div>
+        <div class="stat-label">Active Potholes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">✅</div>
+        <div class="stat-value" id="admin-stat-resolved">0</div>
+        <div class="stat-label">Resolved</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🔴</div>
+        <div class="stat-value" id="admin-stat-high">0</div>
+        <div class="stat-label">High Severity</div>
+      </div>
+    </section>
+
+    <!-- Header & controls -->
+    <div class="moderation-header">
+      <div>
+        <h2>🛡️ Database <span class="gradient-text">Management</span></h2>
+        <p style="color: var(--text-secondary); margin-top: 4px; font-size: 0.95rem;">
+          Securely manage coordinates, severity, and status of reported potholes.
+        </p>
+      </div>
+      
+      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <!-- Filter controls -->
+        <div class="filter-group">
+          <span style="font-weight: 700; color: var(--text-secondary);">Show:</span>
+          <label class="filter-label"><input type="radio" name="mod-filter" value="active" checked onchange="loadPotholesList()"> Active</label>
+          <label class="filter-label"><input type="radio" name="mod-filter" value="resolved" onchange="loadPotholesList()"> Resolved</label>
+          <label class="filter-label"><input type="radio" name="mod-filter" value="all" onchange="loadPotholesList()"> All</label>
+        </div>
+        <!-- Logout button -->
+        <button class="btn btn-secondary btn-sm" onclick="handleLogout()" style="border-color: var(--danger); color: var(--danger);">
+          🚪 Logout
+        </button>
+      </div>
+    </div>
+
+    <!-- Potholes Data Table -->
+    <div class="moderation-card">
+      <div class="table-responsive">
+        <table class="mod-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>📍 Coordinates</th>
+              <th>⚠️ Severity</th>
+              <th>📊 Reports</th>
+              <th>🎯 Confidence</th>
+              <th>👤 Reporter</th>
+              <th>📅 Reported At</th>
+              <th style="text-align: right;">⚙️ Actions</th>
+            </tr>
+          </thead>
+          <tbody id="potholes-list">
+            <tr>
+              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 40px 0;">
+                ⏳ Loading reported potholes...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── 3. Edit Details Modal ────────────────────────────────────── -->
+  <div id="edit-modal" class="modal-overlay">
+    <div class="admin-modal">
+      <div class="modal-header">
+        <h3 id="modal-title">✏️ Edit Pothole Report</h3>
+        <button class="modal-close" onclick="closeEditModal()">✖</button>
+      </div>
+      <form id="edit-form" onsubmit="submitPotholeEdit(event)">
+        <input type="hidden" id="edit-pothole-id">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="edit-lat">Latitude</label>
+            <input type="number" step="any" id="edit-lat" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="edit-lng">Longitude</label>
+            <input type="number" step="any" id="edit-lng" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="edit-severity">Severity</label>
+            <select id="edit-severity" class="form-control" style="width:100%;">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="edit-confidence">Confidence (0.0 to 1.0)</label>
+            <input type="number" step="0.01" min="0" max="1" id="edit-confidence" class="form-control" required>
+          </div>
+          <div class="form-group" style="display:flex; flex-direction:row; align-items:center; gap:8px; margin-top:8px;">
+            <input type="checkbox" id="edit-active" style="width:18px; height:18px; cursor:pointer; accent-color:var(--accent);">
+            <label for="edit-active" style="font-weight:600; cursor:pointer;">Active / Visible on Map</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="closeEditModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Footer ──────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <p>© 2026 <a href="/">PathPulse AI</a> — Making roads safer, one ride at a time.</p>
+  </footer>
+
+  <!-- ── Client Logic ────────────────────────────────────────────── -->
+  <script>
+    // ── Authentication Check on Load ──────────────────────────────────
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/admin/check');
+        const data = await res.json();
+        
+        if (data.logged_in) {
+          showDashboardView();
+        } else {
+          showLoginView();
+        }
+      } catch (err) {
+        console.error("Auth check failed:", err);
+        showLoginView();
+      }
+    }
+
+    function showLoginView() {
+      document.getElementById('login-view').style.display = 'block';
+      document.getElementById('admin-dashboard-view').style.display = 'none';
+    }
+
+    function showDashboardView() {
+      document.getElementById('login-view').style.display = 'none';
+      document.getElementById('admin-dashboard-view').style.display = 'block';
+      loadPotholesList();
+      loadSystemStats();
+    }
+
+    // ── Login Handlers ────────────────────────────────────────────────
+    async function handleLogin(event) {
+      event.preventDefault();
+      const usernameInput = document.getElementById('username').value;
+      const passwordInput = document.getElementById('password').value;
+      const errorDiv = document.getElementById('login-error');
+
+      errorDiv.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: usernameInput, password: passwordInput })
+        });
+        
+        const data = await res.json();
+        if (data.status === 'success') {
+          showDashboardView();
+        } else {
+          errorDiv.style.display = 'block';
+        }
+      } catch (err) {
+        errorDiv.textContent = 'Server connection failed.';
+        errorDiv.style.display = 'block';
+      }
+    }
+
+    // ── Logout Handlers ───────────────────────────────────────────────
+    async function handleLogout() {
+      try {
+        await fetch('/api/admin/logout', { method: 'POST' });
+        showLoginView();
+      } catch (err) {
+        alert("Logout failed");
+      }
+    }
+
+    // ── System Stats Summary Loading ─────────────────────────────────
+    async function loadSystemStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        if (data.status === 'success') {
+          document.getElementById('admin-stat-total').textContent = data.stats.total_reported;
+          document.getElementById('admin-stat-active').textContent = data.stats.active_potholes;
+          document.getElementById('admin-stat-resolved').textContent = data.stats.resolved;
+          document.getElementById('admin-stat-high').textContent = data.stats.high_severity;
+        }
+      } catch (err) {
+        console.error("Failed to load statistics summary:", err);
+      }
+    }
+
+    // ── Load Potholes List ────────────────────────────────────────────
+    let currentPotholes = [];
+
+    async function loadPotholesList() {
+      const tbody = document.getElementById('potholes-list');
+      const filter = document.querySelector('input[name="mod-filter"]:checked').value;
+      
+      try {
+        const res = await fetch(`/api/potholes?status=${filter}`);
+        const data = await res.json();
+        
+        tbody.innerHTML = '';
+        
+        if (!data.potholes || data.potholes.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 40px 0;">
+                📭 No reports found matching the filter.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        currentPotholes = data.potholes;
+        
+        data.potholes.forEach(p => {
+          const date = new Date(p.created_at).toLocaleString();
+          const tr = document.createElement('tr');
+          tr.id = `row-${p.id}`;
+          
+          const resolveBtn = p.is_active 
+            ? `<button class="btn btn-secondary btn-sm" style="padding:4px 8px; font-size:0.75rem; border-color:var(--accent); color:var(--accent);" onclick="resolvePotholeReport(${p.id})">✅ Resolve</button>`
+            : `<span class="badge resolved">fixed</span>`;
+            
+          tr.innerHTML = `
+            <td><strong>#${p.id}</strong></td>
+            <td>
+              <a href="/map?lat=${p.latitude}&lng=${p.longitude}" style="color:var(--info); text-decoration:none; font-weight:600;">
+                ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}
+              </a>
+            </td>
+            <td><span class="badge ${p.severity}">${p.severity}</span></td>
+            <td><span style="font-weight:700;">${p.report_count}</span></td>
+            <td><span style="font-family:'JetBrains Mono',monospace;">${(p.confidence * 100).toFixed(0)}%</span></td>
+            <td>${p.reported_by || 'anonymous'}</td>
+            <td style="font-size:0.8rem; color:var(--text-secondary);">${date}</td>
+            <td style="text-align: right;">
+              <div style="display:flex; gap:6px; justify-content:flex-end; align-items:center;">
+                ${resolveBtn}
+                <button class="btn btn-secondary btn-sm" style="padding:4px 8px; font-size:0.75rem; border-color:var(--info); color:var(--info);" onclick="openEditModal(${p.id})">✏️ Edit</button>
+                <button class="btn btn-secondary btn-sm" style="padding:4px 8px; font-size:0.75rem; border-color:var(--danger); color:var(--danger);" onclick="deletePotholeReport(${p.id})">🗑️ Delete</button>
+              </div>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Error fetching table details:', err);
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--danger); padding: 40px 0;">
+              ❌ Failed to load pothole database.
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    // ── Action Handlers: Resolve, Edit, Delete ───────────────────────
+    async function resolvePotholeReport(id) {
+      if (!confirm(`Mark pothole #${id} as resolved/fixed?`)) return;
+      try {
+        const res = await fetch(`/api/potholes/${id}/resolve`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+          loadPotholesList();
+          loadSystemStats();
+        } else {
+          alert("Error: " + data.message);
+        }
+      } catch (err) {
+        alert("Failed to resolve pothole.");
+      }
+    }
+
+    // Modal control handlers
+    function openEditModal(id) {
+      const p = currentPotholes.find(item => item.id === id);
+      if (!p) return;
+
+      document.getElementById('edit-pothole-id').value = p.id;
+      document.getElementById('edit-lat').value = p.latitude;
+      document.getElementById('edit-lng').value = p.longitude;
+      document.getElementById('edit-severity').value = p.severity;
+      document.getElementById('edit-confidence').value = p.confidence;
+      document.getElementById('edit-active').checked = p.is_active;
+
+      document.getElementById('modal-title').textContent = `✏️ Edit Pothole Report #${p.id}`;
+      
+      const modal = document.getElementById('edit-modal');
+      modal.style.display = 'flex';
+      setTimeout(() => modal.classList.add('show'), 10);
+    }
+
+    function closeEditModal() {
+      const modal = document.getElementById('edit-modal');
+      modal.classList.remove('show');
+      setTimeout(() => modal.style.display = 'none', 300);
+    }
+
+    async function submitPotholeEdit(event) {
+      event.preventDefault();
+      const id = document.getElementById('edit-pothole-id').value;
+      const lat = parseFloat(document.getElementById('edit-lat').value);
+      const lng = parseFloat(document.getElementById('edit-lng').value);
+      const severity = document.getElementById('edit-severity').value;
+      const confidence = parseFloat(document.getElementById('edit-confidence').value);
+      const is_active = document.getElementById('edit-active').checked;
+
+      try {
+        const res = await fetch(`/api/potholes/${id}/edit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            latitude: lat,
+            longitude: lng,
+            severity: severity,
+            confidence: confidence,
+            is_active: is_active
+          })
+        });
+
+        const data = await res.json();
+        if (data.status === 'success') {
+          closeEditModal();
+          loadPotholesList();
+          loadSystemStats();
+        } else {
+          alert("Failed to save: " + data.message);
+        }
+      } catch (err) {
+        alert("Server error while editing pothole.");
+      }
+    }
+
+    async function deletePotholeReport(id) {
+      if (!confirm(`🗑️ WARNING: Are you sure you want to PERMANENTLY delete pothole report #${id}? This action cannot be undone.`)) return;
+      
+      try {
+        const res = await fetch(`/api/potholes/${id}/delete`, { method: 'DELETE' });
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+          loadPotholesList();
+          loadSystemStats();
+        } else {
+          alert("Error: " + data.message);
+        }
+      } catch (err) {
+        alert("Failed to delete pothole.");
+      }
+    }
+
+    // Run auth check on DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', checkAuth);
+  </script>
+</body>
+
+</html>
