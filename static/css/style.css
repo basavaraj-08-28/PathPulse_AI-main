@@ -143,6 +143,8 @@ body {
 }
 
 .nav-links a {
+  display: inline-block;
+  white-space: nowrap;
   text-decoration: none;
   color: var(--text-secondary);
   padding: 10px 20px;

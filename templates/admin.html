@@ -187,7 +187,6 @@
       <li><a href="/map">Map</a></li>
       <li><a href="/detect">Start Ride</a></li>
       <li><a href="/admin" class="active">Admin</a></li>
-      <li id="pwa-install-li" style="display:none;"><button id="pwa-install-btn">📲 Install App</button></li>
     </ul>
   </nav>
 
@@ -592,7 +591,6 @@
     document.addEventListener('DOMContentLoaded', checkAuth);
   </script>
   
-  <script src="{{ url_for('static', filename='js/pwa-install.js') }}"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
