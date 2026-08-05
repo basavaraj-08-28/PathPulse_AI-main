@@ -28,6 +28,7 @@ const NAV = {
   currentSpeed:       0,        // km/h
   recalcCooldown:     false,    // Prevents rapid recalculation loops
   autoStart:          false,    // Auto-start nav after destination select
+  pendingAutoStart:   false,    // Flag for event-driven auto-start navigation
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -555,7 +556,7 @@ function renderFavPanel() {
       <span class="dest-icon">⭐</span>
       <span class="dest-name">${escapeHtml(d.name)}</span>
       <button class="dest-fav-btn fav-active"
-              onclick="event.stopPropagation(); toggleFavAndRender(${d.lat}, d.lon, '${escapeHtml(d.name)}')"
+              onclick="event.stopPropagation(); toggleFavAndRender(${d.lat}, ${d.lon}, '${escapeHtml(d.name)}')"
               title="Remove Favourite">★</button>
     </div>
   `).join('');
@@ -628,13 +629,10 @@ window.selectAndNavigate = function(lat, lon, name) {
     // Auto-start navigation if enabled
     const autoToggle = document.getElementById('auto-nav-toggle');
     if (autoToggle && autoToggle.checked) {
+      NAV.pendingAutoStart = true;
       // Wait for directions to be fetched first
       setTimeout(() => {
         window.getDirections(lat, lon);
-        // Wait a moment for LRM to compute route, then start nav
-        setTimeout(() => {
-          window.startNavigation(lat, lon, displayName);
-        }, 2500);
       }, 300);
     }
   };
@@ -679,7 +677,7 @@ function showToast(message, type = 'info') {
 
     _origGet(destLat, destLon);
 
-    // After a tick, listen to routesfound on the new control
+    // Register event listener immediately to prevent missing routesfound events
     setTimeout(() => {
       if (!window.routingControl) return;
       window.routingControl.on('routesfound', function(e) {
@@ -694,8 +692,14 @@ function showToast(message, type = 'info') {
         if (startBtn) startBtn.style.display = 'inline-flex';
 
         console.log(`[Nav] Route loaded: ${route.coordinates.length} points, ${route.instructions?.length || 0} steps.`);
+
+        // Event-driven auto-start trigger
+        if (NAV.pendingAutoStart) {
+          NAV.pendingAutoStart = false;
+          window.startNavigation(NAV.destLat, NAV.destLon, NAV.destName);
+        }
       });
-    }, 200);
+    }, 0);
   };
 })();
 
