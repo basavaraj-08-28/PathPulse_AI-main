@@ -1,667 +1,2371 @@
 /**
- * PathPulse AI — Pathole Detection Engine
- * Uses phone accelerometer + GPS to detect and report patholes in real-time
+ * PathPulse AI — Pothole Detection Engine
+ * Uses phone accelerometer + GPS to detect and report potholes in real-time
+ *
+ * IMPORTANT:
+ * - Real GPS only
+ * - No simulated GPS fallback
+ * - Pothole reports require a valid GPS position
  */
 
-// ── State ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+
 let isDetecting = false;
 let watchId = null;
 let detectionCount = 0;
 let lastReportTime = 0;
-const REPORT_COOLDOWN = 2000; // ms between reports (avoid duplicates)
-const PATHOLE_THRESHOLD = 18; // m/s² — spike threshold for detection
+
+const REPORT_COOLDOWN = 2000; // milliseconds
+const PATHOLE_THRESHOLD = 18; // m/s²
 const GRAVITY = 9.81;
 
-// ── Added Feature State ─────────────────────────────────────────────
+// GPS state
+let currentPosition = null;
+let gpsAccuracy = null;
+let gpsAvailable = false;
+let gpsError = null;
+
+// Audio state
 let isMuted = false;
 let alertedPatholes = new Set();
 let allPatholesData = [];
 
-// IndexedDB database setup
+// IndexedDB
 let dbPromise = null;
-function initIndexedDB() {
-  if (!window.indexedDB) return;
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open('PathPulseOffline', 1);
-    request.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('patholes')) {
-        db.createObjectStore('patholes', { keyPath: 'id' });
-      }
-    };
-    request.onsuccess = (e) => resolve(e.target.result);
-    request.onerror = (e) => reject(e.target.error);
-  });
-}
-initIndexedDB();
 
-
-// Accelerometer history for smoothing
+// Accelerometer
 const accelHistory = [];
 const HISTORY_SIZE = 5;
 
-// ── Map Setup ───────────────────────────────────────────────────────
-const map = L.map('detect-map', {
-  zoomControl: true
-}).setView([13.0827, 80.2707], 15);
-
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; CARTO &copy; OSM',
-  maxZoom: 19
-}).addTo(map);
-
-let userMarker = null;
-let routeLine = null;
-const routeCoords = [];
-const patholeLayer = L.layerGroup().addTo(map);
-
-// Load existing patholes
-loadExistingPatholes();
-
-// ── Severity Colors ─────────────────────────────────────────────────
-const SEVERITY_COLORS = {
-  low:    '#3b82f6',
-  medium: '#f59e0b',
-  high:   '#ef4444'
-};
-
-// ── Start Detection ─────────────────────────────────────────────────
-function startDetection() {
-  // Check for required APIs
-  if (!navigator.geolocation) {
-    alert('Geolocation is not supported by your browser.');
-    return;
-  }
-
-  isDetecting = true;
-  updateStatus('detecting', '🔍 Scanning road surface...');
-  document.getElementById('btn-start').disabled = true;
-  document.getElementById('btn-stop').disabled = false;
-
-  // Start GPS tracking
-  watchId = navigator.geolocation.watchPosition(
-    onPositionUpdate,
-    onPositionError,
-    { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
-  );
-
-  // Start accelerometer
-  startAccelerometer();
-}
-
-// ── Stop Detection ──────────────────────────────────────────────────
-function stopDetection() {
-  isDetecting = false;
-  updateStatus('idle', '⏹ Detection stopped');
-  document.getElementById('btn-start').disabled = false;
-  document.getElementById('btn-stop').disabled = true;
-
-  if (watchId !== null) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-  }
-
-  stopAccelerometer();
-}
-
-// ── Accelerometer ───────────────────────────────────────────────────
 let accelHandler = null;
-
-function startAccelerometer() {
-  if (window.DeviceMotionEvent) {
-    // Check if permission is needed (iOS 13+)
-    if (typeof DeviceMotionEvent.requestPermission === 'function') {
-      DeviceMotionEvent.requestPermission()
-        .then(state => {
-          if (state === 'granted') {
-            attachAccelListener();
-          } else {
-            alert('Accelerometer permission denied. Using simulation mode.');
-            startSimulatedAccelerometer();
-          }
-        })
-        .catch(() => {
-          startSimulatedAccelerometer();
-        });
-    } else {
-      attachAccelListener();
-      // If no real data comes in 2 seconds, switch to simulation
-      setTimeout(() => {
-        if (isDetecting && accelHistory.length === 0) {
-          console.log('No accelerometer data detected, switching to simulation');
-          startSimulatedAccelerometer();
-        }
-      }, 2000);
-    }
-  } else {
-    startSimulatedAccelerometer();
-  }
-}
-
-function attachAccelListener() {
-  accelHandler = (event) => {
-    if (!isDetecting) return;
-    const acc = event.accelerationIncludingGravity;
-    if (acc && acc.x !== null) {
-      processAccelData(acc.x, acc.y, acc.z);
-    }
-  };
-  window.addEventListener('devicemotion', accelHandler);
-}
-
-function stopAccelerometer() {
-  if (accelHandler) {
-    window.removeEventListener('devicemotion', accelHandler);
-    accelHandler = null;
-  }
-  if (simInterval) {
-    clearInterval(simInterval);
-    simInterval = null;
-  }
-}
-
-// ── Simulated Accelerometer (for desktop testing) ───────────────────
 let simInterval = null;
 
-function startSimulatedAccelerometer() {
-  console.log('🎮 Running in simulation mode (no real accelerometer)');
-  simInterval = setInterval(() => {
-    if (!isDetecting) return;
-
-    // Normal driving vibration
-    let x = (Math.random() - 0.5) * 3;
-    let y = (Math.random() - 0.5) * 3;
-    let z = GRAVITY + (Math.random() - 0.5) * 2;
-
-    // Random pathole spike (~5% chance)
-    if (Math.random() < 0.05) {
-      const spike = 15 + Math.random() * 20;
-      z += spike * (Math.random() > 0.5 ? 1 : -1);
-      x += (Math.random() - 0.5) * 10;
-    }
-
-    processAccelData(x, y, z);
-  }, 100);
-}
-
-// ── Process Accelerometer Data ──────────────────────────────────────
-let currentPosition = null;
-
-function processAccelData(x, y, z) {
-  // Update UI
-  document.getElementById('accel-x').textContent = x.toFixed(1);
-  document.getElementById('accel-y').textContent = y.toFixed(1);
-  document.getElementById('accel-z').textContent = z.toFixed(1);
-
-  // Calculate magnitude (removing gravity baseline)
-  const magnitude = Math.sqrt(x * x + y * y + z * z);
-  const deviation = Math.abs(magnitude - GRAVITY);
-
-  document.getElementById('magnitude-value').textContent = deviation.toFixed(1) + ' m/s²';
-
-  // Update magnitude bar (max at 40 m/s²)
-  const barPercent = Math.min(100, (deviation / 40) * 100);
-  const fill = document.getElementById('magnitude-fill');
-  fill.style.width = barPercent + '%';
-
-  // Color the bar based on intensity
-  if (deviation > PATHOLE_THRESHOLD) {
-    fill.style.background = 'linear-gradient(90deg, #f59e0b, #ef4444)';
-  } else if (deviation > PATHOLE_THRESHOLD * 0.6) {
-    fill.style.background = 'linear-gradient(90deg, #06d6a0, #f59e0b)';
-  } else {
-    fill.style.background = 'var(--gradient-1)';
-  }
-
-  // Smoothing: keep history
-  accelHistory.push(deviation);
-  if (accelHistory.length > HISTORY_SIZE) accelHistory.shift();
-
-  // Dynamic Chart Update
-  if (accelChart) {
-    accelChart.data.datasets[0].data.push(deviation);
-    accelChart.data.datasets[0].data.shift();
-    accelChart.update('none'); // Silent update for performance
-  }
-
-  // Detect pathole: spike above threshold
-  const now = Date.now();
-  if (deviation > PATHOLE_THRESHOLD && (now - lastReportTime) > REPORT_COOLDOWN) {
-    lastReportTime = now;
-    onPatholeDetected(deviation);
-  }
-}
-
-// ── GPS Position Update ─────────────────────────────────────────────
-function onPositionUpdate(position) {
-  const lat = position.coords.latitude;
-  const lng = position.coords.longitude;
-  currentPosition = { lat, lng };
-
-  // Update user marker
-  if (!userMarker) {
-    userMarker = L.circleMarker([lat, lng], {
-      radius: 8,
-      fillColor: '#06d6a0',
-      fillOpacity: 1,
-      color: '#ffffff',
-      weight: 3
-    }).addTo(map);
-
-    // Add pulsing effect
-    const pulseMarker = L.circleMarker([lat, lng], {
-      radius: 20,
-      fillColor: '#336ac8ff',
-      fillOpacity: 0.2,
-      color: '#06d6a0',
-      weight: 1,
-      opacity: 0.5
-    }).addTo(map);
-
-    setInterval(() => {
-      if (currentPosition) {
-        pulseMarker.setLatLng([currentPosition.lat, currentPosition.lng]);
-      }
-    }, 1000);
-  } else {
-    userMarker.setLatLng([lat, lng]);
-  }
-
-  // Track route
-  routeCoords.push([lat, lng]);
-  if (routeLine) {
-    routeLine.setLatLngs(routeCoords);
-  } else {
-    routeLine = L.polyline(routeCoords, {
-      color: '#06d6a0',
-      weight: 3,
-      opacity: 0.6,
-      dashArray: '8, 8'
-    }).addTo(map);
-  }
-
-  map.panTo([lat, lng]);
-
-  // Check proximity to patholes
-  checkProximity(lat, lng);
-}
-
-function onPositionError(err) {
-  console.warn('GPS Error:', err.message);
-  if (isDetecting && !currentPosition) {
-    // Use a simulated position for testing on desktop
-    currentPosition = {
-      lat: 13.0827 + (Math.random() - 0.5) * 0.01,
-      lng: 80.2707 + (Math.random() - 0.5) * 0.01
-    };
-    updateStatus('detecting', '🔍 Scanning (GPS simulated)');
-    // Check proximity to patholes with simulated GPS coords
-    checkProximity(currentPosition.lat, currentPosition.lng);
-  }
-}
-
-// ── Pathole Detected! ───────────────────────────────────────────────
-async function onPatholeDetected(accelPeak) {
-  detectionCount++;
-
-  // Determine position
-  let lat, lng;
-  if (currentPosition) {
-    lat = currentPosition.lat;
-    lng = currentPosition.lng;
-  } else {
-    // Simulated position for desktop testing
-    lat = 13.0827 + (Math.random() - 0.5) * 0.02;
-    lng = 80.2707 + (Math.random() - 0.5) * 0.02;
-  }
-
-  // Determine severity
-  let severity;
-  if (accelPeak >= 25) severity = 'high';
-  else if (accelPeak >= 15) severity = 'medium';
-  else severity = 'low';
-
-  // Flash status
-  updateStatus('alert', `🚨 PATHOLE DETECTED — ${severity.toUpperCase()}`);
-  setTimeout(() => {
-    if (isDetecting) updateStatus('detecting', '🔍 Scanning road surface...');
-  }, 2000);
-
-  // Add marker to map
-  const color = SEVERITY_COLORS[severity];
-  const marker = L.circleMarker([lat, lng], {
-    radius: severity === 'high' ? 13 : severity === 'medium' ? 10 : 8,
-    fillColor: color,
-    fillOpacity: 0.85,
-    color: '#fff',
-    weight: 2
-  }).addTo(patholeLayer);
-
-  marker.bindPopup(`
-    <div class="popup-title">🕳️ Pathole Detected</div>
-    <span class="popup-severity ${severity}">${severity.toUpperCase()}</span>
-    <div class="popup-meta">
-      <div>📊 Acceleration: ${accelPeak.toFixed(1)} m/s²</div>
-      <div>📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}</div>
-    </div>
-  `);
-
-  // Add to log
-  addLogEntry(severity, lat, lng, accelPeak);
-
-  // Report to server / offline queue
-  if (!navigator.onLine) {
-    saveOfflinePathole(lat, lng, accelPeak);
-  } else {
-    try {
-      await fetch('/api/patholes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          latitude: lat,
-          longitude: lng,
-          accel_peak: accelPeak,
-          confidence: Math.min(1.0, accelPeak / 40)
-        })
-      });
-    } catch (err) {
-      console.warn('Network request failed, queueing offline:', err);
-      saveOfflinePathole(lat, lng, accelPeak);
-    }
-  }
-}
-
-// ── UI Helpers ──────────────────────────────────────────────────────
-function updateStatus(state, text) {
-  const indicator = document.getElementById('status-indicator');
-  const statusText = document.getElementById('status-text');
-  indicator.className = 'status-indicator ' + state;
-  statusText.textContent = text;
-}
-
-function addLogEntry(severity, lat, lng, accelPeak) {
-  const log = document.getElementById('detection-log');
-  const countEl = document.getElementById('log-count');
-
-  // Remove placeholder if present
-  if (detectionCount === 1) {
-    log.innerHTML = '';
-  }
-
-  const time = new Date().toLocaleTimeString();
-
-  const entry = document.createElement('div');
-  entry.className = 'log-entry';
-  entry.innerHTML = `
-    <span class="severity-dot ${severity}"></span>
-    <span><strong>${severity.toUpperCase()}</strong> — ${accelPeak.toFixed(1)} m/s²</span>
-    <span class="log-time">${time}</span>
-  `;
-
-  log.insertBefore(entry, log.firstChild);
-  countEl.textContent = detectionCount + ' detection' + (detectionCount !== 1 ? 's' : '');
-}
-
-// ── Load Existing Patholes ──────────────────────────────────────────
-async function loadExistingPatholes() {
-  try {
-    const res = await fetch('/api/patholes');
-    const data = await res.json();
-    if (data.patholes) {
-      allPatholesData = data.patholes;
-      patholeLayer.clearLayers();
-      allPatholesData.forEach(p => {
-        const color = SEVERITY_COLORS[p.severity] || SEVERITY_COLORS.medium;
-        L.circleMarker([p.latitude, p.longitude], {
-          radius: p.severity === 'high' ? 13 : p.severity === 'medium' ? 10 : 8,
-          fillColor: color,
-          fillOpacity: 0.5,
-          color: '#fff',
-          weight: 1,
-          opacity: 0.6
-        }).addTo(patholeLayer).bindPopup(`
-          <div class="popup-title">🕳️ Previously Reported</div>
-          <span class="popup-severity ${p.severity}">${p.severity.toUpperCase()}</span>
-          <div class="popup-meta">
-            Reports: ${p.report_count} | Confidence: ${(p.confidence * 100).toFixed(0)}%
-          </div>
-        `);
-      });
-    }
-  } catch (e) {
-    console.error('Failed to load existing patholes:', e);
-  }
-}
-
-// ── Center on user location ─────────────────────────────────────────
-if (navigator.geolocation) {
-  navigator.geolocation.getCurrentPosition(
-    onPositionUpdate,
-    () => {},
-    { enableHighAccuracy: true, timeout: 5000 }
-  );
-}
-
-// ── Added Feature Logic ─────────────────────────────────────────────
-
-// Chart.js Oscilloscope Setup
+// Chart
 let accelChart = null;
-function initAccelChart() {
-  const canvas = document.getElementById('accel-chart');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  
-  const labels = Array(40).fill('');
-  const data = Array(40).fill(0);
-  
-  accelChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'Acceleration (m/s²)',
-        data: data,
-        borderColor: '#059669',
-        borderWidth: 2,
-        fill: true,
-        backgroundColor: 'rgba(5, 150, 105, 0.05)',
-        tension: 0.3,
-        pointRadius: 0
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: { display: false },
-        y: {
-          min: 0,
-          max: 40,
-          grid: { color: 'rgba(0,0,0,0.05)' },
-          ticks: { color: 'var(--text-secondary)', font: { size: 9 } }
-        }
-      },
-      plugins: {
-        legend: { display: false }
-      }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// INDEXEDDB
+// ═══════════════════════════════════════════════════════════════════
+
+function initIndexedDB() {
+    if (!window.indexedDB) {
+        console.warn("IndexedDB is not supported.");
+        return;
     }
-  });
+
+    dbPromise = new Promise((resolve, reject) => {
+        const request = indexedDB.open("PathPulseOffline", 1);
+
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+
+            if (!db.objectStoreNames.contains("patholes")) {
+                db.createObjectStore("patholes", {
+                    keyPath: "id"
+                });
+            }
+        };
+
+        request.onsuccess = (event) => {
+            resolve(event.target.result);
+        };
+
+        request.onerror = (event) => {
+            reject(event.target.error);
+        };
+    });
 }
 
-// Audio Alerts Control
-window.toggleMute = function() {
-  isMuted = !isMuted;
-  const btn = document.getElementById('btn-mute');
-  if (btn) {
-    btn.textContent = isMuted ? '🔇' : '🔊';
-    btn.title = isMuted ? 'Unmute alerts' : 'Mute alerts';
-  }
+initIndexedDB();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// DETECTION MAP
+// ═══════════════════════════════════════════════════════════════════
+
+const map = L.map("detect-map", {
+    zoomControl: true
+}).setView([12.971599, 77.594566], 15);
+
+L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    {
+        attribution: "&copy; CARTO &copy; OSM",
+        maxZoom: 19
+    }
+).addTo(map);
+
+
+// ═══════════════════════════════════════════════════════════════════
+// MAP STATE
+// ═══════════════════════════════════════════════════════════════════
+
+let userMarker = null;
+let userAccuracyCircle = null;
+let pulseMarker = null;
+let pulseTimer = null;
+
+let routeLine = null;
+const routeCoords = [];
+
+const patholeLayer = L.layerGroup().addTo(map);
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SEVERITY COLORS
+// ═══════════════════════════════════════════════════════════════════
+
+const SEVERITY_COLORS = {
+    low: "#3b82f6",
+    medium: "#f59e0b",
+    high: "#ef4444"
 };
 
-// Proximity Warnings
-function checkProximity(lat, lng) {
-  if (isMuted || allPatholesData.length === 0) return;
-  allPatholesData.forEach(p => {
-    const dist = getDistance(lat, lng, p.latitude, p.longitude);
-    if (dist <= 50) {
-      if (!alertedPatholes.has(p.id)) {
-        alertedPatholes.add(p.id);
-        playAlertSound();
-        setTimeout(() => {
-          speakAlert(`Warning: ${p.severity} severity pathole ahead.`);
-        }, 400);
-      }
-    } else if (dist > 100) {
-      alertedPatholes.delete(p.id);
+
+// ═══════════════════════════════════════════════════════════════════
+// GPS PERMISSION / STATUS
+// ═══════════════════════════════════════════════════════════════════
+
+function checkGPSAvailability() {
+    if (!navigator.geolocation) {
+        gpsAvailable = false;
+        gpsError = "Geolocation is not supported by this browser.";
+
+        updateGPSStatus(
+            "error",
+            "❌ GPS not supported"
+        );
+
+        return false;
     }
-  });
+
+    return true;
 }
 
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3; // metres
-  const phi1 = lat1 * Math.PI / 180;
-  const phi2 = lat2 * Math.PI / 180;
-  const deltaPhi = (lat2 - lat1) * Math.PI / 180;
-  const deltaLambda = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-            Math.cos(phi1) * Math.cos(phi2) *
-            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+
+function updateGPSStatus(state, message, accuracy = null) {
+
+    const gpsStatus = document.getElementById("gps-status");
+    const gpsAccuracyEl = document.getElementById("gps-accuracy");
+
+    if (gpsStatus) {
+        gpsStatus.textContent = message;
+
+        gpsStatus.classList.remove(
+            "success",
+            "error",
+            "warning",
+            "active"
+        );
+
+        gpsStatus.classList.add(state);
+    }
+
+    if (gpsAccuracyEl) {
+
+        if (accuracy !== null && Number.isFinite(accuracy)) {
+            gpsAccuracyEl.textContent =
+                `±${Math.round(accuracy)} m`;
+        } else {
+            gpsAccuracyEl.textContent = "--";
+        }
+    }
+
+    // Also update general detection status when appropriate
+    if (state === "error") {
+        updateStatus("error", message);
+    }
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// UPDATE GPS MARKER
+// ═══════════════════════════════════════════════════════════════════
+
+function updateUserLocationOnMap(
+    lat,
+    lng,
+    accuracy,
+    centerMap = false
+) {
+
+    const position = [lat, lng];
+
+    // Main location marker
+    if (!userMarker) {
+
+        userMarker = L.circleMarker(position, {
+            radius: 8,
+            fillColor: "#06d6a0",
+            fillOpacity: 1,
+            color: "#ffffff",
+            weight: 3
+        })
+        .addTo(map)
+        .bindPopup("📍 You are here");
+
+    } else {
+
+        userMarker.setLatLng(position);
+
+    }
+
+
+    // Accuracy circle
+    if (!userAccuracyCircle) {
+
+        userAccuracyCircle = L.circle(position, {
+            radius: accuracy || 20,
+            fillColor: "#06d6a0",
+            fillOpacity: 0.08,
+            color: "#06d6a0",
+            weight: 1,
+            opacity: 0.3
+        }).addTo(map);
+
+    } else {
+
+        userAccuracyCircle.setLatLng(position);
+
+        if (accuracy && Number.isFinite(accuracy)) {
+            userAccuracyCircle.setRadius(accuracy);
+        }
+
+    }
+
+
+    // Pulse marker
+    if (!pulseMarker) {
+
+        pulseMarker = L.circleMarker(position, {
+            radius: 20,
+            fillColor: "#336ac8",
+            fillOpacity: 0.15,
+            color: "#06d6a0",
+            weight: 1,
+            opacity: 0.5
+        }).addTo(map);
+
+        if (!pulseTimer) {
+
+            pulseTimer = setInterval(() => {
+
+                if (!currentPosition || !pulseMarker) {
+                    return;
+                }
+
+                pulseMarker.setLatLng([
+                    currentPosition.lat,
+                    currentPosition.lng
+                ]);
+
+            }, 500);
+        }
+
+    } else {
+
+        pulseMarker.setLatLng(position);
+
+    }
+
+
+    if (centerMap) {
+        map.setView(position, 17);
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// START GPS
+// ═══════════════════════════════════════════════════════════════════
+
+function startGPSTracking() {
+
+    if (!checkGPSAvailability()) {
+        return false;
+    }
+
+
+    // Clear old watcher
+    if (watchId !== null) {
+
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+
+    }
+
+
+    gpsAvailable = false;
+    gpsError = null;
+
+    updateGPSStatus(
+        "warning",
+        "⏳ Acquiring GPS..."
+    );
+
+
+    watchId = navigator.geolocation.watchPosition(
+        onPositionUpdate,
+        onPositionError,
+        {
+            enableHighAccuracy: true,
+            timeout: 20000,
+            maximumAge: 1000
+        }
+    );
+
+
+    return true;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// STOP GPS
+// ═══════════════════════════════════════════════════════════════════
+
+function stopGPSTracking() {
+
+    if (watchId !== null) {
+
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+
+    }
+
+    gpsAvailable = false;
+
+    updateGPSStatus(
+        "warning",
+        "GPS tracking stopped"
+    );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// START DETECTION
+// ═══════════════════════════════════════════════════════════════════
+
+function startDetection() {
+
+    if (!checkGPSAvailability()) {
+        return;
+    }
+
+
+    const btnStart = document.getElementById("btn-start");
+    const btnStop = document.getElementById("btn-stop");
+
+
+    // Check secure context
+    const isLocalhost =
+        location.hostname === "localhost" ||
+        location.hostname === "127.0.0.1";
+
+    if (!window.isSecureContext && !isLocalhost) {
+
+        alert(
+            "GPS requires HTTPS on mobile browsers.\n\n" +
+            "Please open PathPulse using HTTPS."
+        );
+
+        updateGPSStatus(
+            "error",
+            "❌ HTTPS required for GPS"
+        );
+
+        return;
+    }
+
+
+    isDetecting = true;
+
+    if (btnStart) {
+        btnStart.disabled = true;
+    }
+
+    if (btnStop) {
+        btnStop.disabled = false;
+    }
+
+
+    updateStatus(
+        "detecting",
+        "📡 Acquiring GPS..."
+    );
+
+
+    // Start GPS
+    const gpsStarted = startGPSTracking();
+
+    if (!gpsStarted) {
+
+        isDetecting = false;
+
+        if (btnStart) {
+            btnStart.disabled = false;
+        }
+
+        if (btnStop) {
+            btnStop.disabled = true;
+        }
+
+        return;
+    }
+
+
+    // Start accelerometer
+    startAccelerometer();
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// STOP DETECTION
+// ═══════════════════════════════════════════════════════════════════
+
+function stopDetection() {
+
+    isDetecting = false;
+
+    stopGPSTracking();
+    stopAccelerometer();
+
+
+    updateStatus(
+        "idle",
+        "⏹ Detection stopped"
+    );
+
+
+    const btnStart = document.getElementById("btn-start");
+    const btnStop = document.getElementById("btn-stop");
+
+    if (btnStart) {
+        btnStart.disabled = false;
+    }
+
+    if (btnStop) {
+        btnStop.disabled = true;
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// GPS SUCCESS
+// ═══════════════════════════════════════════════════════════════════
+
+function onPositionUpdate(position) {
+
+    if (!position || !position.coords) {
+        return;
+    }
+
+
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const accuracy = position.coords.accuracy;
+
+
+    // Validate coordinates
+    if (
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng)
+    ) {
+        console.warn("Invalid GPS coordinates.");
+        return;
+    }
+
+
+    currentPosition = {
+        lat: lat,
+        lng: lng,
+        accuracy: accuracy,
+        timestamp: position.timestamp
+    };
+
+
+    gpsAccuracy = accuracy;
+    gpsAvailable = true;
+    gpsError = null;
+
+
+    updateGPSStatus(
+        "success",
+        "📍 GPS Active",
+        accuracy
+    );
+
+
+    // Update marker
+    updateUserLocationOnMap(
+        lat,
+        lng,
+        accuracy,
+        userMarker === null
+    );
+
+
+    // Track route
+    addRouteCoordinate(lat, lng);
+
+
+    // Update general status
+    if (isDetecting) {
+
+        updateStatus(
+            "detecting",
+            "🔍 Scanning road surface..."
+        );
+
+    }
+
+
+    // Check nearby potholes
+    checkProximity(lat, lng);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// GPS ERROR
+// ═══════════════════════════════════════════════════════════════════
+
+function onPositionError(error) {
+
+    console.warn(
+        "GPS Error:",
+        error.code,
+        error.message
+    );
+
+
+    gpsAvailable = false;
+    gpsError = error;
+
+
+    let message;
+
+
+    switch (error.code) {
+
+        case error.PERMISSION_DENIED:
+
+            message =
+                "❌ Location permission denied";
+
+            break;
+
+
+        case error.POSITION_UNAVAILABLE:
+
+            message =
+                "⚠️ GPS signal unavailable";
+
+            break;
+
+
+        case error.TIMEOUT:
+
+            message =
+                "⏳ GPS timeout — retrying...";
+
+            break;
+
+
+        default:
+
+            message =
+                "⚠️ Unable to get GPS location";
+    }
+
+
+    updateGPSStatus(
+        "error",
+        message
+    );
+
+
+    // DO NOT generate fake coordinates.
+    //
+    // This is intentional.
+    //
+    // If GPS is unavailable, detection continues,
+    // but pothole reports will wait until a real
+    // GPS position becomes available.
+
+
+    if (isDetecting) {
+
+        updateStatus(
+            "warning",
+            message
+        );
+
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ROUTE TRACKING
+// ═══════════════════════════════════════════════════════════════════
+
+function addRouteCoordinate(lat, lng) {
+
+    const lastPoint =
+        routeCoords.length > 0
+            ? routeCoords[routeCoords.length - 1]
+            : null;
+
+
+    // Avoid adding almost identical GPS points
+    if (lastPoint) {
+
+        const distance =
+            getDistance(
+                lastPoint[0],
+                lastPoint[1],
+                lat,
+                lng
+            );
+
+        if (distance < 2) {
+            return;
+        }
+    }
+
+
+    routeCoords.push([lat, lng]);
+
+
+    if (!routeLine) {
+
+        routeLine = L.polyline(
+            routeCoords,
+            {
+                color: "#06d6a0",
+                weight: 3,
+                opacity: 0.6,
+                dashArray: "8, 8"
+            }
+        ).addTo(map);
+
+    } else {
+
+        routeLine.setLatLngs(routeCoords);
+
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ACCELEROMETER PERMISSION
+// ═══════════════════════════════════════════════════════════════════
+
+function startAccelerometer() {
+
+    if (!window.DeviceMotionEvent) {
+
+        console.warn(
+            "DeviceMotionEvent is not supported."
+        );
+
+        updateStatus(
+            "warning",
+            "⚠️ Accelerometer unavailable"
+        );
+
+        return;
+    }
+
+
+    // iOS permission
+    if (
+        typeof DeviceMotionEvent.requestPermission ===
+        "function"
+    ) {
+
+        DeviceMotionEvent.requestPermission()
+            .then((state) => {
+
+                if (state === "granted") {
+
+                    attachAccelListener();
+
+                } else {
+
+                    alert(
+                        "Accelerometer permission denied."
+                    );
+
+                }
+
+            })
+            .catch((error) => {
+
+                console.error(
+                    "Accelerometer permission error:",
+                    error
+                );
+
+            });
+
+    } else {
+
+        attachAccelListener();
+
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ATTACH ACCELEROMETER
+// ═══════════════════════════════════════════════════════════════════
+
+function attachAccelListener() {
+
+    if (accelHandler) {
+        return;
+    }
+
+
+    accelHandler = (event) => {
+
+        if (!isDetecting) {
+            return;
+        }
+
+
+        const acc =
+            event.accelerationIncludingGravity;
+
+
+        if (
+            acc &&
+            Number.isFinite(acc.x) &&
+            Number.isFinite(acc.y) &&
+            Number.isFinite(acc.z)
+        ) {
+
+            processAccelData(
+                acc.x,
+                acc.y,
+                acc.z
+            );
+
+        }
+
+    };
+
+
+    window.addEventListener(
+        "devicemotion",
+        accelHandler,
+        {
+            passive: true
+        }
+    );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// STOP ACCELEROMETER
+// ═══════════════════════════════════════════════════════════════════
+
+function stopAccelerometer() {
+
+    if (accelHandler) {
+
+        window.removeEventListener(
+            "devicemotion",
+            accelHandler
+        );
+
+        accelHandler = null;
+    }
+
+
+    if (simInterval) {
+
+        clearInterval(simInterval);
+        simInterval = null;
+
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PROCESS ACCELEROMETER
+// ═══════════════════════════════════════════════════════════════════
+
+function processAccelData(x, y, z) {
+
+    const accelX =
+        document.getElementById("accel-x");
+
+    const accelY =
+        document.getElementById("accel-y");
+
+    const accelZ =
+        document.getElementById("accel-z");
+
+    if (accelX) {
+        accelX.textContent = x.toFixed(1);
+    }
+
+    if (accelY) {
+        accelY.textContent = y.toFixed(1);
+    }
+
+    if (accelZ) {
+        accelZ.textContent = z.toFixed(1);
+    }
+
+
+    // Calculate total acceleration
+    const magnitude =
+        Math.sqrt(
+            x * x +
+            y * y +
+            z * z
+        );
+
+
+    // Remove gravity baseline
+    const deviation =
+        Math.abs(
+            magnitude - GRAVITY
+        );
+
+
+    const magnitudeValue =
+        document.getElementById(
+            "magnitude-value"
+        );
+
+    if (magnitudeValue) {
+
+        magnitudeValue.textContent =
+            deviation.toFixed(1) +
+            " m/s²";
+
+    }
+
+
+    // Update bar
+    const barPercent =
+        Math.min(
+            100,
+            (deviation / 40) * 100
+        );
+
+
+    const fill =
+        document.getElementById(
+            "magnitude-fill"
+        );
+
+
+    if (fill) {
+
+        fill.style.width =
+            barPercent + "%";
+
+
+        if (
+            deviation >
+            PATHOLE_THRESHOLD
+        ) {
+
+            fill.style.background =
+                "linear-gradient(90deg, #f59e0b, #ef4444)";
+
+        } else if (
+            deviation >
+            PATHOLE_THRESHOLD * 0.6
+        ) {
+
+            fill.style.background =
+                "linear-gradient(90deg, #06d6a0, #f59e0b)";
+
+        } else {
+
+            fill.style.background =
+                "var(--gradient-1)";
+
+        }
+    }
+
+
+    // History
+    accelHistory.push(deviation);
+
+    if (
+        accelHistory.length >
+        HISTORY_SIZE
+    ) {
+
+        accelHistory.shift();
+
+    }
+
+
+    // Chart
+    if (accelChart) {
+
+        accelChart.data.datasets[0].data.push(
+            deviation
+        );
+
+        accelChart.data.datasets[0].data.shift();
+
+        accelChart.update("none");
+    }
+
+
+    // Detection
+    const now = Date.now();
+
+
+    if (
+        deviation >
+        PATHOLE_THRESHOLD &&
+        now - lastReportTime >
+        REPORT_COOLDOWN
+    ) {
+
+        lastReportTime = now;
+
+        onPatholeDetected(
+            deviation
+        );
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// POTHOLE DETECTED
+// ═══════════════════════════════════════════════════════════════════
+
+async function onPatholeDetected(accelPeak) {
+
+    detectionCount++;
+
+
+    // VERY IMPORTANT:
+    // Do not create a fake location.
+    if (!currentPosition || !gpsAvailable) {
+
+        console.warn(
+            "Pothole detected, but no valid GPS position is available."
+        );
+
+
+        updateStatus(
+            "warning",
+            "⚠️ Pothole detected — waiting for GPS..."
+        );
+
+
+        addLogEntry(
+            "medium",
+            null,
+            null,
+            accelPeak,
+            false
+        );
+
+
+        return;
+    }
+
+
+    const lat =
+        currentPosition.lat;
+
+    const lng =
+        currentPosition.lng;
+
+    const accuracy =
+        currentPosition.accuracy;
+
+
+    // Severity
+    let severity;
+
+    if (accelPeak >= 25) {
+
+        severity = "high";
+
+    } else if (accelPeak >= 15) {
+
+        severity = "medium";
+
+    } else {
+
+        severity = "low";
+
+    }
+
+
+    // Status
+    updateStatus(
+        "alert",
+        `🚨 POTHOLE DETECTED — ${severity.toUpperCase()}`
+    );
+
+
+    setTimeout(() => {
+
+        if (isDetecting) {
+
+            updateStatus(
+                "detecting",
+                "🔍 Scanning road surface..."
+            );
+
+        }
+
+    }, 2000);
+
+
+    // Add temporary marker
+    addDetectedPotholeMarker(
+        lat,
+        lng,
+        severity,
+        accelPeak,
+        accuracy
+    );
+
+
+    // Log
+    addLogEntry(
+        severity,
+        lat,
+        lng,
+        accelPeak,
+        true
+    );
+
+
+    // Prepare report
+    const reportData = {
+
+        latitude: lat,
+        longitude: lng,
+
+        accel_peak: accelPeak,
+
+        confidence:
+            Math.min(
+                1.0,
+                accelPeak / 40
+            ),
+
+        accuracy:
+            accuracy || null,
+
+        created_at:
+            new Date().toISOString()
+    };
+
+
+    // Offline
+    if (!navigator.onLine) {
+
+        saveOfflinePathole(
+            lat,
+            lng,
+            accelPeak,
+            accuracy
+        );
+
+        return;
+    }
+
+
+    // Online
+    try {
+
+        const response =
+            await fetch(
+                "/api/patholes",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify(
+                            reportData
+                        )
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                `Server returned ${response.status}`
+            );
+
+        }
+
+
+        console.log(
+            "Pothole report uploaded successfully."
+        );
+
+
+    } catch (error) {
+
+        console.warn(
+            "Network request failed. Saving offline.",
+            error
+        );
+
+
+        saveOfflinePathole(
+            lat,
+            lng,
+            accelPeak,
+            accuracy
+        );
+
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ADD DETECTED POTHOLE MARKER
+// ═══════════════════════════════════════════════════════════════════
+
+function addDetectedPotholeMarker(
+    lat,
+    lng,
+    severity,
+    accelPeak,
+    accuracy
+) {
+
+    const color =
+        SEVERITY_COLORS[severity];
+
+
+    const radius =
+        severity === "high"
+            ? 13
+            : severity === "medium"
+                ? 10
+                : 8;
+
+
+    const marker =
+        L.circleMarker(
+            [lat, lng],
+            {
+                radius: radius,
+
+                fillColor: color,
+
+                fillOpacity: 0.85,
+
+                color: "#ffffff",
+
+                weight: 2
+            }
+        ).addTo(patholeLayer);
+
+
+    marker.bindPopup(`
+        <div class="popup-title">
+            🕳️ Pothole Detected
+        </div>
+
+        <span class="popup-severity ${severity}">
+            ${severity.toUpperCase()}
+        </span>
+
+        <div class="popup-meta">
+
+            <div>
+                📊 Acceleration:
+                ${accelPeak.toFixed(1)} m/s²
+            </div>
+
+            <div>
+                📍 ${lat.toFixed(5)},
+                ${lng.toFixed(5)}
+            </div>
+
+            <div>
+                🎯 GPS Accuracy:
+                ±${accuracy ? Math.round(accuracy) : "--"} m
+            </div>
+
+        </div>
+    `);
+
+    marker.openPopup();
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// STATUS UI
+// ═══════════════════════════════════════════════════════════════════
+
+function updateStatus(state, text) {
+
+    const indicator =
+        document.getElementById(
+            "status-indicator"
+        );
+
+    const statusText =
+        document.getElementById(
+            "status-text"
+        );
+
+
+    if (indicator) {
+
+        indicator.className =
+            "status-indicator " +
+            state;
+
+    }
+
+
+    if (statusText) {
+
+        statusText.textContent =
+            text;
+
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// DETECTION LOG
+// ═══════════════════════════════════════════════════════════════════
+
+function addLogEntry(
+    severity,
+    lat,
+    lng,
+    accelPeak,
+    gpsValid = true
+) {
+
+    const log =
+        document.getElementById(
+            "detection-log"
+        );
+
+    const countEl =
+        document.getElementById(
+            "log-count"
+        );
+
+
+    if (!log) {
+        return;
+    }
+
+
+    if (detectionCount === 1) {
+        log.innerHTML = "";
+    }
+
+
+    const time =
+        new Date().toLocaleTimeString();
+
+
+    const entry =
+        document.createElement("div");
+
+
+    entry.className =
+        "log-entry";
+
+
+    const locationText =
+        gpsValid
+            ? `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+            : "Waiting for GPS";
+
+
+    entry.innerHTML = `
+        <span class="severity-dot ${severity}"></span>
+
+        <span>
+            <strong>
+                ${severity.toUpperCase()}
+            </strong>
+            —
+            ${accelPeak.toFixed(1)} m/s²
+
+            <br>
+
+            <small>
+                📍 ${locationText}
+            </small>
+        </span>
+
+        <span class="log-time">
+            ${time}
+        </span>
+    `;
+
+
+    log.insertBefore(
+        entry,
+        log.firstChild
+    );
+
+
+    if (countEl) {
+
+        countEl.textContent =
+            detectionCount +
+            " detection" +
+            (
+                detectionCount !== 1
+                    ? "s"
+                    : ""
+            );
+
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LOAD EXISTING POTHOLES
+// ═══════════════════════════════════════════════════════════════════
+
+async function loadExistingPatholes() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/patholes"
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (!data.patholes) {
+            return;
+        }
+
+
+        allPatholesData =
+            data.patholes;
+
+
+        patholeLayer.clearLayers();
+
+
+        allPatholesData.forEach(
+            (pothole) => {
+
+                const color =
+                    SEVERITY_COLORS[
+                        pothole.severity
+                    ] ||
+                    SEVERITY_COLORS.medium;
+
+
+                const radius =
+                    pothole.severity === "high"
+                        ? 13
+                        : pothole.severity === "medium"
+                            ? 10
+                            : 8;
+
+
+                const marker =
+                    L.circleMarker(
+                        [
+                            pothole.latitude,
+                            pothole.longitude
+                        ],
+                        {
+                            radius: radius,
+
+                            fillColor: color,
+
+                            fillOpacity: 0.5,
+
+                            color: "#ffffff",
+
+                            weight: 1,
+
+                            opacity: 0.6
+                        }
+                    ).addTo(patholeLayer);
+
+
+                marker.bindPopup(`
+                    <div class="popup-title">
+                        🕳️ Previously Reported
+                    </div>
+
+                    <span class="popup-severity ${pothole.severity}">
+                        ${(
+                            pothole.severity ||
+                            "medium"
+                        ).toUpperCase()}
+                    </span>
+
+                    <div class="popup-meta">
+
+                        <div>
+                            📍
+                            ${Number(
+                                pothole.latitude
+                            ).toFixed(5)},
+                            ${Number(
+                                pothole.longitude
+                            ).toFixed(5)}
+                        </div>
+
+                        <div>
+                            📊 Reports:
+                            ${pothole.report_count || 1}
+                        </div>
+
+                        <div>
+                            🎯 Confidence:
+                            ${(
+                                Number(
+                                    pothole.confidence || 0
+                                ) * 100
+                            ).toFixed(0)}%
+                        </div>
+
+                    </div>
+                `);
+            }
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            "Failed to load existing potholes:",
+            error
+        );
+
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// AUDIO MUTE
+// ═══════════════════════════════════════════════════════════════════
+
+window.toggleMute = function () {
+
+    isMuted = !isMuted;
+
+
+    const button =
+        document.getElementById(
+            "btn-mute"
+        );
+
+
+    if (button) {
+
+        button.textContent =
+            isMuted
+                ? "🔇"
+                : "🔊";
+
+
+        button.title =
+            isMuted
+                ? "Unmute alerts"
+                : "Mute alerts";
+
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PROXIMITY WARNING
+// ═══════════════════════════════════════════════════════════════════
+
+function checkProximity(lat, lng) {
+
+    if (
+        isMuted ||
+        allPatholesData.length === 0
+    ) {
+        return;
+    }
+
+
+    allPatholesData.forEach(
+        (pothole) => {
+
+            const distance =
+                getDistance(
+                    lat,
+                    lng,
+                    pothole.latitude,
+                    pothole.longitude
+                );
+
+
+            if (distance <= 50) {
+
+                if (
+                    !alertedPatholes.has(
+                        pothole.id
+                    )
+                ) {
+
+                    alertedPatholes.add(
+                        pothole.id
+                    );
+
+
+                    playAlertSound();
+
+
+                    setTimeout(() => {
+
+                        speakAlert(
+                            `Warning: ${pothole.severity} severity pothole ahead.`
+                        );
+
+                    }, 400);
+
+                }
+
+            } else if (distance > 100) {
+
+                alertedPatholes.delete(
+                    pothole.id
+                );
+
+            }
+
+        }
+    );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// DISTANCE CALCULATION
+// ═══════════════════════════════════════════════════════════════════
+
+function getDistance(
+    lat1,
+    lon1,
+    lat2,
+    lon2
+) {
+
+    const R = 6371e3;
+
+
+    const phi1 =
+        lat1 *
+        Math.PI /
+        180;
+
+
+    const phi2 =
+        lat2 *
+        Math.PI /
+        180;
+
+
+    const deltaPhi =
+        (lat2 - lat1) *
+        Math.PI /
+        180;
+
+
+    const deltaLambda =
+        (lon2 - lon1) *
+        Math.PI /
+        180;
+
+
+    const a =
+        Math.sin(
+            deltaPhi / 2
+        ) *
+        Math.sin(
+            deltaPhi / 2
+        ) +
+
+        Math.cos(phi1) *
+        Math.cos(phi2) *
+
+        Math.sin(
+            deltaLambda / 2
+        ) *
+        Math.sin(
+            deltaLambda / 2
+        );
+
+
+    const c =
+        2 *
+        Math.atan2(
+            Math.sqrt(a),
+            Math.sqrt(1 - a)
+        );
+
+
+    return R * c;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// AUDIO ALERT
+// ═══════════════════════════════════════════════════════════════════
 
 function playAlertSound() {
-  try {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
-    gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
-    
-    oscillator.start();
-    oscillator.stop(audioCtx.currentTime + 0.35);
-  } catch (e) {
-    console.error("AudioContext failed:", e);
-  }
+
+    try {
+
+        const AudioContext =
+            window.AudioContext ||
+            window.webkitAudioContext;
+
+
+        if (!AudioContext) {
+            return;
+        }
+
+
+        const audioCtx =
+            new AudioContext();
+
+
+        const oscillator =
+            audioCtx.createOscillator();
+
+
+        const gainNode =
+            audioCtx.createGain();
+
+
+        oscillator.connect(
+            gainNode
+        );
+
+
+        gainNode.connect(
+            audioCtx.destination
+        );
+
+
+        oscillator.type =
+            "sine";
+
+
+        oscillator.frequency.setValueAtTime(
+            880,
+            audioCtx.currentTime
+        );
+
+
+        gainNode.gain.setValueAtTime(
+            0.15,
+            audioCtx.currentTime
+        );
+
+
+        oscillator.start();
+
+
+        oscillator.stop(
+            audioCtx.currentTime +
+            0.35
+        );
+
+    } catch (error) {
+
+        console.error(
+            "AudioContext failed:",
+            error
+        );
+
+    }
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// VOICE ALERT
+// ═══════════════════════════════════════════════════════════════════
 
 function speakAlert(text) {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.volume = 1.0;
-    window.speechSynthesis.speak(utterance);
-  }
+
+    if (
+        "speechSynthesis" in
+        window
+    ) {
+
+        const utterance =
+            new SpeechSynthesisUtterance(
+                text
+            );
+
+
+        utterance.rate = 1.0;
+        utterance.volume = 1.0;
+
+
+        window.speechSynthesis.speak(
+            utterance
+        );
+
+    }
 }
 
-// IndexedDB Offline operations
-function saveOfflinePathole(lat, lng, accelPeak) {
-  if (!dbPromise) return;
-  dbPromise.then(db => {
-    const tx = db.transaction('patholes', 'readwrite');
-    tx.objectStore('patholes').put({
-      id: Date.now() + Math.random(),
-      latitude: lat,
-      longitude: lng,
-      accel_peak: accelPeak,
-      confidence: Math.min(1.0, accelPeak / 40),
-      created_at: new Date().toISOString()
-    });
-    return tx.complete;
-  }).then(() => {
-    updateOfflineUI();
-  }).catch(e => console.error("IndexedDB write failed:", e));
-}
 
-function syncOfflineQueue() {
-  if (!navigator.onLine || !dbPromise) return;
-  dbPromise.then(db => {
-    const tx = db.transaction('patholes', 'readonly');
-    return tx.objectStore('patholes').getAll();
-  }).then(async (queuedPatholes) => {
-    if (!queuedPatholes || queuedPatholes.length === 0) return;
-    
-    const banner = document.getElementById('offline-banner');
-    if (banner) {
-      banner.className = 'offline-banner synced';
-      banner.textContent = `🔄 Syncing ${queuedPatholes.length} offline reports...`;
-      banner.style.display = 'flex';
+// ═══════════════════════════════════════════════════════════════════
+// OFFLINE SAVE
+// ═══════════════════════════════════════════════════════════════════
+
+function saveOfflinePathole(
+    lat,
+    lng,
+    accelPeak,
+    accuracy = null
+) {
+
+    if (!dbPromise) {
+
+        console.warn(
+            "IndexedDB unavailable."
+        );
+
+        return;
     }
 
-    let successCount = 0;
-    for (const p of queuedPatholes) {
-      try {
-        const res = await fetch('/api/patholes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(p)
+
+    dbPromise
+        .then((db) => {
+
+            return new Promise(
+                (resolve, reject) => {
+
+                    const tx =
+                        db.transaction(
+                            "patholes",
+                            "readwrite"
+                        );
+
+
+                    const store =
+                        tx.objectStore(
+                            "patholes"
+                        );
+
+
+                    store.put({
+
+                        id:
+                            Date.now() +
+                            Math.random(),
+
+                        latitude: lat,
+
+                        longitude: lng,
+
+                        accel_peak:
+                            accelPeak,
+
+                        confidence:
+                            Math.min(
+                                1.0,
+                                accelPeak / 40
+                            ),
+
+                        accuracy:
+                            accuracy,
+
+                        created_at:
+                            new Date().toISOString()
+
+                    });
+
+
+                    tx.oncomplete =
+                        () => resolve();
+
+
+                    tx.onerror =
+                        () => reject(
+                            tx.error
+                        );
+
+                }
+            );
+
+        })
+        .then(() => {
+
+            updateOfflineUI();
+
+        })
+        .catch((error) => {
+
+            console.error(
+                "IndexedDB write failed:",
+                error
+            );
+
         });
-        if (res.ok) {
-          await dbPromise.then(db => {
-            const deleteTx = db.transaction('patholes', 'readwrite');
-            deleteTx.objectStore('patholes').delete(p.id);
-            return deleteTx.complete;
-          });
-          successCount++;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SYNC OFFLINE QUEUE
+// ═══════════════════════════════════════════════════════════════════
+
+async function syncOfflineQueue() {
+
+    if (
+        !navigator.onLine ||
+        !dbPromise
+    ) {
+        return;
+    }
+
+
+    try {
+
+        const db =
+            await dbPromise;
+
+
+        const queuedPatholes =
+            await new Promise(
+                (resolve, reject) => {
+
+                    const tx =
+                        db.transaction(
+                            "patholes",
+                            "readonly"
+                        );
+
+
+                    const request =
+                        tx.objectStore(
+                            "patholes"
+                        ).getAll();
+
+
+                    request.onsuccess =
+                        () =>
+                            resolve(
+                                request.result
+                            );
+
+
+                    request.onerror =
+                        () =>
+                            reject(
+                                request.error
+                            );
+
+                }
+            );
+
+
+        if (
+            !queuedPatholes ||
+            queuedPatholes.length === 0
+        ) {
+            return;
         }
-      } catch (e) {
-        console.error("Failed to upload queued pathole:", e);
-      }
+
+
+        const banner =
+            document.getElementById(
+                "offline-banner"
+            );
+
+
+        if (banner) {
+
+            banner.className =
+                "offline-banner synced";
+
+            banner.textContent =
+                `🔄 Syncing ${queuedPatholes.length} offline reports...`;
+
+            banner.style.display =
+                "flex";
+        }
+
+
+        let successCount = 0;
+
+
+        for (
+            const pothole
+            of queuedPatholes
+        ) {
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/api/patholes",
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body:
+                                JSON.stringify(
+                                    pothole
+                                )
+                        }
+                    );
+
+
+                if (!response.ok) {
+                    continue;
+                }
+
+
+                await new Promise(
+                    (resolve, reject) => {
+
+                        const deleteTx =
+                            db.transaction(
+                                "patholes",
+                                "readwrite"
+                            );
+
+
+                        deleteTx
+                            .objectStore(
+                                "patholes"
+                            )
+                            .delete(
+                                pothole.id
+                            );
+
+
+                        deleteTx.oncomplete =
+                            () => resolve();
+
+
+                        deleteTx.onerror =
+                            () =>
+                                reject(
+                                    deleteTx.error
+                                );
+
+                    }
+                );
+
+
+                successCount++;
+
+
+            } catch (error) {
+
+                console.error(
+                    "Failed to upload queued pothole:",
+                    error
+                );
+
+            }
+        }
+
+
+        if (successCount > 0) {
+
+            if (banner) {
+
+                banner.textContent =
+                    `✅ Synced ${successCount} reports successfully!`;
+
+
+                setTimeout(() => {
+
+                    banner.style.display =
+                        "none";
+
+                }, 3000);
+
+            }
+
+
+            loadExistingPatholes();
+
+        } else {
+
+            updateOfflineUI();
+
+        }
+
+
+    } catch (error) {
+
+        console.error(
+            "Offline sync failed:",
+            error
+        );
+
     }
-    
-    if (successCount > 0) {
-      if (banner) {
-        banner.textContent = `✅ Synced ${successCount} reports successfully!`;
-        setTimeout(() => {
-          banner.style.display = 'none';
-        }, 3000);
-      }
-      loadExistingPatholes();
-    } else {
-      updateOfflineUI();
-    }
-  });
 }
 
-function updateOfflineUI() {
-  const banner = document.getElementById('offline-banner');
-  if (!banner) return;
-  
-  if (!navigator.onLine) {
-    if (dbPromise) {
-      dbPromise.then(db => {
-        const tx = db.transaction('patholes', 'readonly');
-        return tx.objectStore('patholes').count();
-      }).then(count => {
-        banner.style.display = 'flex';
-        banner.className = 'offline-banner';
-        banner.textContent = `⚠️ Running Offline — ${count} pathole report(s) queued locally.`;
-      });
-    } else {
-      banner.style.display = 'flex';
-      banner.className = 'offline-banner';
-      banner.textContent = '⚠️ Running Offline — sensor data will not sync.';
+
+// ═══════════════════════════════════════════════════════════════════
+// OFFLINE UI
+// ═══════════════════════════════════════════════════════════════════
+
+async function updateOfflineUI() {
+
+    const banner =
+        document.getElementById(
+            "offline-banner"
+        );
+
+
+    if (!banner) {
+        return;
     }
-  } else {
-    banner.style.display = 'none';
-  }
+
+
+    if (!navigator.onLine) {
+
+        let count = 0;
+
+
+        if (dbPromise) {
+
+            try {
+
+                const db =
+                    await dbPromise;
+
+
+                count =
+                    await new Promise(
+                        (resolve) => {
+
+                            const tx =
+                                db.transaction(
+                                    "patholes",
+                                    "readonly"
+                                );
+
+
+                            const request =
+                                tx.objectStore(
+                                    "patholes"
+                                ).count();
+
+
+                            request.onsuccess =
+                                () =>
+                                    resolve(
+                                        request.result
+                                    );
+
+
+                            request.onerror =
+                                () =>
+                                    resolve(0);
+
+                        }
+                    );
+
+            } catch (error) {
+
+                console.error(
+                    error
+                );
+
+            }
+        }
+
+
+        banner.style.display =
+            "flex";
+
+
+        banner.className =
+            "offline-banner";
+
+
+        banner.textContent =
+            `⚠️ Running Offline — ${count} pothole report(s) queued locally.`;
+
+
+    } else {
+
+        banner.style.display =
+            "none";
+
+    }
 }
 
-// Event Listeners for Offline status
-window.addEventListener('online', () => {
-  updateOfflineUI();
-  syncOfflineQueue();
-});
-window.addEventListener('offline', updateOfflineUI);
 
-// Initialize Chart & UI
-document.addEventListener('DOMContentLoaded', () => {
-  initAccelChart();
-  setTimeout(updateOfflineUI, 1000);
-});
+// ═══════════════════════════════════════════════════════════════════
+// ONLINE / OFFLINE EVENTS
+// ═══════════════════════════════════════════════════════════════════
 
+window.addEventListener(
+    "online",
+    () => {
+
+        console.log(
+            "🌐 Internet connection restored."
+        );
+
+
+        updateOfflineUI();
+        syncOfflineQueue();
+
+    }
+);
+
+
+window.addEventListener(
+    "offline",
+    () => {
+
+        console.log(
+            "📴 Internet connection lost."
+        );
+
+
+        updateOfflineUI();
+
+    }
+);
+
+
+// ═══════════════════════════════════════════════════════════════════
+// INITIAL GPS LOCATION
+// ═══════════════════════════════════════════════════════════════════
+
+function initializeGPS() {
+
+    if (!checkGPSAvailability()) {
+        return;
+    }
+
+
+    updateGPSStatus(
+        "warning",
+        "📍 Requesting GPS permission..."
+    );
+
+
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+
+            onPositionUpdate(
+                position
+            );
+
+        },
+
+        (error) => {
+
+            onPositionError(
+                error
+            );
+
+        },
+
+        {
+            enableHighAccuracy: true,
+
+            timeout: 20000,
+
+            maximumAge: 0
+        }
+    );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// CHART
+// ═══════════════════════════════════════════════════════════════════
+
+function initAccelChart() {
+
+    const canvas =
+        document.getElementById(
+            "accel-chart"
+        );
+
+
+    if (!canvas) {
+        return;
+    }
+
+
+    if (typeof Chart === "undefined") {
+
+        console.warn(
+            "Chart.js is not loaded."
+        );
+
+        return;
+    }
+
+
+    const ctx =
+        canvas.getContext("2d");
+
+
+    const labels =
+        Array(40).fill("");
+
+
+    const data =
+        Array(40).fill(0);
+
+
+    accelChart =
+        new Chart(
+            ctx,
+            {
+                type: "line",
+
+                data: {
+
+                    labels: labels,
+
+                    datasets: [
+                        {
+                            label:
+                                "Acceleration (m/s²)",
+
+                            data: data,
+
+                            borderColor:
+                                "#059669",
+
+                            borderWidth: 2,
+
+                            fill: true,
+
+                            backgroundColor:
+                                "rgba(5, 150, 105, 0.05)",
+
+                            tension: 0.3,
+
+                            pointRadius: 0
+                        }
+                    ]
+                },
+
+
+                options: {
+
+                    responsive: true,
+
+                    maintainAspectRatio:
+                        false,
+
+                    scales: {
+
+                        x: {
+                            display: false
+                        },
+
+                        y: {
+
+                            min: 0,
+
+                            max: 40,
+
+                            grid: {
+                                color:
+                                    "rgba(0,0,0,0.05)"
+                            },
+
+                            ticks: {
+                                color:
+                                    "var(--text-secondary)",
+
+                                font: {
+                                    size: 9
+                                }
+                            }
+                        }
+                    },
+
+
+                    plugins: {
+
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PAGE INITIALIZATION
+// ═══════════════════════════════════════════════════════════════════
+
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+
+        console.log(
+            "🚀 PathPulse Detection Engine initialized."
+        );
+
+
+        initAccelChart();
+
+
+        loadExistingPatholes();
+
+
+        setTimeout(
+            updateOfflineUI,
+            1000
+        );
+
+
+        // Request GPS immediately
+        initializeGPS();
+
+    }
+);

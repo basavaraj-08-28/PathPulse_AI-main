@@ -1,30 +1,52 @@
 /**
  * PathPulse AI — Dashboard Map Script
- * Initializes the main map and loads pathole markers
+ * Initializes the main map and loads pothole markers
+ *
+ * GPS FIXED VERSION
+ * - Uses real device GPS
+ * - Uses continuous watchPosition()
+ * - Removes fake Chennai GPS fallback
+ * - Requires HTTPS on mobile
+ * - Keeps route/search/pothole functionality
  */
 
 // ── Map Initialization ──────────────────────────────────────────────
+
 const map = L.map('main-map', {
   zoomControl: true,
   attributionControl: true
-}).setView([12.971599, 77.594566], 11);  // Default: Bengaluru, India
-window.ppMap = map;  // Expose map instance for navigation.js
+}).setView([12.971599, 77.594566], 11); // Default: Bengaluru, India
 
-// Map Layers
-const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; <a href="https://carto.com/"></a> &copy; <a href="https://www.openstreetmap.org/copyright"></a>',
-  maxZoom: 20
-});
+window.ppMap = map;
 
-const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-  attribution: 'Tiles &copy; Esri',
-  maxZoom: 19
-});
 
-const terrainLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
-  maxZoom: 17
-});
+// ── Map Layers ──────────────────────────────────────────────────────
+
+const cartoLayer = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  {
+    attribution:
+      '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 20
+  }
+);
+
+const satelliteLayer = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  {
+    attribution: 'Tiles &copy; Esri',
+    maxZoom: 19
+  }
+);
+
+const terrainLayer = L.tileLayer(
+  'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+  {
+    attribution:
+      '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
+    maxZoom: 17
+  }
+);
 
 cartoLayer.addTo(map);
 
@@ -34,13 +56,21 @@ const baseMaps = {
   "Terrain": terrainLayer
 };
 
-L.control.layers(baseMaps, null, { position: 'bottomright' }).addTo(map);
+L.control.layers(
+  baseMaps,
+  null,
+  {
+    position: 'bottomright'
+  }
+).addTo(map);
+
 
 // ── Severity Colors ─────────────────────────────────────────────────
+
 const SEVERITY_COLORS = {
-  low:    '#09681fff',
+  low: '#09681fff',
   medium: '#f59e0b',
-  high:   '#ef4444'
+  high: '#ef4444'
 };
 
 const SEVERITY_RADIUS = {
@@ -49,745 +79,2872 @@ const SEVERITY_RADIUS = {
   high: 13
 };
 
+
 // ── Added Feature State ─────────────────────────────────────────────
+
 let allPatholesData = [];
-window.allPatholesData = allPatholesData;  // Expose for navigation.js
+
+window.allPatholesData = allPatholesData;
+
 let alertedPatholes = new Set();
+
 let isMuted = false;
 
-// Configurable route proximity threshold (20-30 meters range)
+
+// Configurable route proximity threshold
+
 window.ROUTE_PROXIMITY_THRESHOLD_METERS = 25;
+
 let currentRouteCoordinates = null;
 
 
+// ====================================================================
+// USER GPS LOCATION
+// ====================================================================
 
-// ── User Location Marker ────────────────────────────────────────────
 let userLocationMarker = null;
+
 let userLocationCircle = null;
 
 let locationWatchId = null;
 
-function showUserLocation(lat, lng, accuracy, centerMap = true, pos = null) {
-  if (userLocationMarker) {
-    userLocationMarker.setLatLng([lat, lng]);
-    userLocationCircle.setLatLng([lat, lng]);
-    if (accuracy) userLocationCircle.setRadius(accuracy);
+let lastKnownGPSPosition = null;
+
+
+// GPS configuration
+
+const GPS_OPTIONS = {
+
+  enableHighAccuracy: true,
+
+  timeout: 30000,
+
+  maximumAge: 3000
+
+};
+
+
+// ── Show User Location ──────────────────────────────────────────────
+
+function showUserLocation(
+  lat,
+  lng,
+  accuracy,
+  centerMap = false,
+  pos = null
+) {
+
+  // Validate GPS coordinates
+
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng)
+  ) {
+
+    console.warn(
+      '⚠️ Invalid GPS coordinates:',
+      lat,
+      lng
+    );
+
+    return;
+  }
+
+
+  const latLng = [
+    lat,
+    lng
+  ];
+
+
+  // ────────────────────────────────────────────────────────────────
+  // CREATE USER LOCATION MARKER
+  // ────────────────────────────────────────────────────────────────
+
+  if (!userLocationMarker) {
+
+    userLocationMarker =
+      L.circleMarker(
+        latLng,
+        {
+          radius: 8,
+
+          fillColor: '#06d6a0',
+
+          fillOpacity: 1,
+
+          color: '#ffffff',
+
+          weight: 3
+        }
+      )
+      .addTo(map)
+      .bindPopup(
+        '📍 You are here'
+      );
+
+
+    // GPS accuracy circle
+
+    userLocationCircle =
+      L.circle(
+        latLng,
+        {
+          radius:
+            Number.isFinite(accuracy) &&
+            accuracy > 0
+              ? accuracy
+              : 30,
+
+          fillColor: '#06d6a0',
+
+          fillOpacity: 0.08,
+
+          color: '#06d6a0',
+
+          weight: 1,
+
+          opacity: 0.3
+        }
+      )
+      .addTo(map);
+
   } else {
-    userLocationMarker = L.circleMarker([lat, lng], {
-      radius: 8,
-      fillColor: '#06d6a0',
-      fillOpacity: 1,
-      color: '#ffffff',
-      weight: 3
-    }).addTo(map).bindPopup('📍 You are here');
 
-    userLocationCircle = L.circle([lat, lng], {
-      radius: accuracy || 100,
-      fillColor: '#06d6a0',
-      fillOpacity: 0.08,
-      color: '#06d6a0',
-      weight: 1,
-      opacity: 0.3
-    }).addTo(map);
-  }
+    // ──────────────────────────────────────────────────────────────
+    // UPDATE EXISTING MARKER
+    // ──────────────────────────────────────────────────────────────
 
-  if (centerMap) {
-    map.setView([lat, lng], 15);
-  }
+    userLocationMarker.setLatLng(
+      latLng
+    );
 
-  // Update live routing if active
-  if (window.routingControl) {
-    window.routingControl.spliceWaypoints(0, 1, L.latLng(lat, lng));
-  }
 
-  // Check proximity to patholes
-  checkProximity(lat, lng);
+    if (userLocationCircle) {
 
-  // ── Navigation GPS hook — navigation.js subscribes here ──────────
-  if (typeof window.onNavGPSUpdate === 'function') {
-    window.onNavGPSUpdate(lat, lng, pos);
-  }
-}
+      userLocationCircle.setLatLng(
+        latLng
+      );
 
-// ── Locate User ─────────────────────────────────────────────────────
-function locateUser(forceSimulated = false) {
-  const btn = document.getElementById('btn-locate');
-  if (btn) {
-    btn.innerHTML = '⏳ Acquiring GPS...';
-    btn.disabled = true;
-  }
 
-  if (!navigator.geolocation) {
-    if (typeof showToast === 'function') showToast('Geolocation is not supported by your browser.', 'error');
-    else alert('Geolocation is not supported by your browser.');
-    if (btn) { btn.innerHTML = '📍 My Location'; btn.disabled = false; }
-    return;
-  }
+      if (
+        Number.isFinite(accuracy) &&
+        accuracy > 0
+      ) {
 
-  // Clear existing watch if active
-  if (locationWatchId !== null) {
-    navigator.geolocation.clearWatch(locationWatchId);
-    locationWatchId = null;
-  }
-
-  // If user explicitly requests simulated location
-  if (forceSimulated) {
-    showUserLocation(13.0827, 80.2707, 100, true);
-    if (btn) { btn.innerHTML = '📍 Simulated Location'; btn.disabled = false; }
-    if (typeof showToast === 'function') showToast('Using simulated location fallback (13.0827, 80.2707)', 'info');
-    return;
-  }
-
-  // Check for insecure origin (HTTP on non-localhost IP address)
-  const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  if (!window.isSecureContext && !isLocalhost) {
-    console.warn('Geolocation warning: HTTP connection on external IP address.');
-    if (typeof showToast === 'function') {
-      showToast('⚠️ Mobile browsers require HTTPS or http://localhost for GPS access.', 'warning');
+        userLocationCircle.setRadius(
+          accuracy
+        );
+      }
     }
   }
 
-  let locationAcquired = false;
 
-  // Use watchPosition for high-accuracy live GPS tracking
-  locationWatchId = navigator.geolocation.watchPosition(
-    (pos) => {
-      locationAcquired = true;
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const accuracy = pos.coords.accuracy;
+  // ──────────────────────────────────────────────────────────────
+  // CENTER MAP ON FIRST REAL GPS FIX
+  // ──────────────────────────────────────────────────────────────
 
-      showUserLocation(lat, lng, accuracy, !userLocationMarker, pos);
+  if (centerMap) {
+
+    map.setView(
+      latLng,
+      16
+    );
+  }
+
+
+  // ──────────────────────────────────────────────────────────────
+  // UPDATE LIVE ROUTING
+  // ──────────────────────────────────────────────────────────────
+
+  if (
+    window.routingControl
+  ) {
+
+    try {
+
+      window.routingControl.spliceWaypoints(
+        0,
+        1,
+        L.latLng(
+          lat,
+          lng
+        )
+      );
+
+    } catch (error) {
+
+      console.warn(
+        '⚠️ Could not update route start:',
+        error
+      );
+    }
+  }
+
+
+  // ──────────────────────────────────────────────────────────────
+  // CHECK POTHOLE PROXIMITY
+  // ──────────────────────────────────────────────────────────────
+
+  checkProximity(
+    lat,
+    lng
+  );
+
+
+  // ──────────────────────────────────────────────────────────────
+  // NAVIGATION GPS HOOK
+  // ──────────────────────────────────────────────────────────────
+
+  if (
+    typeof window.onNavGPSUpdate ===
+    'function'
+  ) {
+
+    window.onNavGPSUpdate(
+      lat,
+      lng,
+      pos
+    );
+  }
+}
+
+
+// ── GPS Success Handler ─────────────────────────────────────────────
+
+function handleGPSPosition(
+  position
+) {
+
+  const lat =
+    position.coords.latitude;
+
+  const lng =
+    position.coords.longitude;
+
+  const accuracy =
+    position.coords.accuracy;
+
+
+  // Validate coordinates
+
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng)
+  ) {
+
+    console.error(
+      '❌ Invalid GPS coordinates received.'
+    );
+
+    return;
+  }
+
+
+  // Save latest GPS position
+
+  lastKnownGPSPosition = {
+
+    latitude: lat,
+
+    longitude: lng,
+
+    accuracy: accuracy,
+
+    timestamp:
+      position.timestamp
+  };
+
+
+  console.log(
+    `📍 LIVE GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)} | ` +
+    `Accuracy: ${
+      Number.isFinite(accuracy)
+        ? accuracy.toFixed(1)
+        : 'unknown'
+    }m`
+  );
+
+
+  // Check if this is first GPS fix
+
+  const firstFix =
+    !userLocationMarker;
+
+
+  // Show REAL GPS location
+
+  showUserLocation(
+    lat,
+    lng,
+    accuracy,
+    firstFix,
+    position
+  );
+
+
+  // Update locate button
+
+  const btn =
+    document.getElementById(
+      'btn-locate'
+    );
+
+
+  if (btn) {
+
+    btn.innerHTML =
+      '📍 My Location';
+
+    btn.disabled =
+      false;
+  }
+
+
+  // Show GPS success message
+
+  if (
+    firstFix &&
+    typeof showToast ===
+      'function'
+  ) {
+
+    const accuracyText =
+      Number.isFinite(accuracy)
+        ? Math.round(accuracy)
+        : '?';
+
+
+    showToast(
+      `📍 Live GPS location found (${accuracyText}m accuracy)`,
+      'success'
+    );
+  }
+}
+
+
+// ── GPS Error Handler ───────────────────────────────────────────────
+
+function handleGPSError(
+  error
+) {
+
+  console.warn(
+    '⚠️ Geolocation error:',
+    error.code,
+    error.message
+  );
+
+
+  const btn =
+    document.getElementById(
+      'btn-locate'
+    );
+
+
+  if (btn) {
+
+    btn.disabled =
+      false;
+  }
+
+
+  let message;
+
+
+  switch (
+    error.code
+  ) {
+
+    case error.PERMISSION_DENIED:
+
+      message =
+        '📍 Location permission denied. Please allow location access in browser settings.';
 
       if (btn) {
-        btn.innerHTML = '📍 My Location';
-        btn.disabled = false;
+
+        btn.innerHTML =
+          '🔐 Allow GPS';
       }
-    },
-    (err) => {
-      console.warn('Geolocation error:', err.code, err.message);
-      if (btn) { btn.disabled = false; }
 
-      if (!locationAcquired) {
-        let msg = 'Could not fetch live GPS position.';
-        if (err.code === err.PERMISSION_DENIED) {
-          msg = 'Location permission denied. Please allow location access in browser settings.';
-          if (btn) btn.innerHTML = '📍 GPS Permission Denied';
-        } else if (err.code === err.POSITION_UNAVAILABLE) {
-          msg = 'GPS signal unavailable. Please turn on device location/GPS.';
-          if (btn) btn.innerHTML = '📍 Retry GPS';
-        } else if (err.code === err.TIMEOUT) {
-          msg = 'GPS fix timed out. Retrying...';
-          if (btn) btn.innerHTML = '📍 Retry GPS';
-        }
+      break;
 
-        if (typeof showToast === 'function') showToast(msg, 'warning');
 
-        // Fallback to simulated location if no position marker exists yet
-        if (!userLocationMarker) {
-          showUserLocation(13.0827, 80.2707, 100, true);
-          if (btn) btn.innerHTML = '📍 Simulated Location';
-        }
+    case error.POSITION_UNAVAILABLE:
+
+      message =
+        '📍 GPS signal unavailable. Please turn ON device Location/GPS.';
+
+      if (btn) {
+
+        btn.innerHTML =
+          '📍 Retry GPS';
       }
-    },
+
+      break;
+
+
+    case error.TIMEOUT:
+
+      message =
+        '📍 GPS fix timed out. Searching for your location...';
+
+      if (btn) {
+
+        btn.innerHTML =
+          '📍 Retry GPS';
+      }
+
+      break;
+
+
+    default:
+
+      message =
+        '📍 Could not fetch your current GPS location.';
+
+      if (btn) {
+
+        btn.innerHTML =
+          '📍 Retry GPS';
+      }
+  }
+
+
+  if (
+    typeof showToast ===
+    'function'
+  ) {
+
+    showToast(
+      message,
+      'warning'
+    );
+  }
+
+
+  /*
+   * IMPORTANT:
+   *
+   * There is NO fake GPS fallback here.
+   *
+   * The old code used:
+   *
+   * 13.0827, 80.2707
+   *
+   * which is Chennai.
+   *
+   * That has been removed.
+   */
+}
+
+
+// ── Start Live GPS Tracking ─────────────────────────────────────────
+
+function startLiveLocation() {
+
+  // Browser support check
+
+  if (
+    !navigator.geolocation
+  ) {
+
+    console.error(
+      '❌ Geolocation is not supported by this browser.'
+    );
+
+
+    if (
+      typeof showToast ===
+      'function'
+    ) {
+
+      showToast(
+        '❌ GPS is not supported by this browser.',
+        'error'
+      );
+    }
+
+
+    return false;
+  }
+
+
+  // ────────────────────────────────────────────────────────────────
+  // HTTPS CHECK
+  // ────────────────────────────────────────────────────────────────
+
+  const isLocalhost =
+    location.hostname ===
+      'localhost' ||
+
+    location.hostname ===
+      '127.0.0.1';
+
+
+  if (
+    !window.isSecureContext &&
+    !isLocalhost
+  ) {
+
+    console.error(
+      '❌ Geolocation requires HTTPS.'
+    );
+
+
+    if (
+      typeof showToast ===
+      'function'
+    ) {
+
+      showToast(
+        '⚠️ GPS requires HTTPS. Please open the HTTPS version of PathPulse.',
+        'error'
+      );
+    }
+
+
+    return false;
+  }
+
+
+  // ────────────────────────────────────────────────────────────────
+  // CLEAR OLD WATCHER
+  // ────────────────────────────────────────────────────────────────
+
+  if (
+    locationWatchId !== null
+  ) {
+
+    navigator.geolocation.clearWatch(
+      locationWatchId
+    );
+
+    locationWatchId =
+      null;
+  }
+
+
+  console.log(
+    '🛰️ Starting live GPS tracking...'
+  );
+
+
+  // ────────────────────────────────────────────────────────────────
+  // START CONTINUOUS GPS
+  // ────────────────────────────────────────────────────────────────
+
+  locationWatchId =
+    navigator.geolocation.watchPosition(
+
+      handleGPSPosition,
+
+      handleGPSError,
+
+      GPS_OPTIONS
+    );
+
+
+  return true;
+}
+
+
+// ── Stop Live GPS ──────────────────────────────────────────────────
+
+function stopLiveLocation() {
+
+  if (
+    locationWatchId !== null
+  ) {
+
+    navigator.geolocation.clearWatch(
+      locationWatchId
+    );
+
+    locationWatchId =
+      null;
+
+
+    console.log(
+      '🛰️ Live GPS tracking stopped.'
+    );
+  }
+}
+
+
+// ── Locate User ─────────────────────────────────────────────────────
+
+function locateUser() {
+
+  const btn =
+    document.getElementById(
+      'btn-locate'
+    );
+
+
+  if (btn) {
+
+    btn.innerHTML =
+      '⏳ Acquiring GPS...';
+
+    btn.disabled =
+      true;
+  }
+
+
+  // Start continuous GPS
+
+  const started =
+    startLiveLocation();
+
+
+  if (!started) {
+
+    if (btn) {
+
+      btn.innerHTML =
+        '📍 Retry GPS';
+
+      btn.disabled =
+        false;
+    }
+
+    return;
+  }
+
+
+  // ────────────────────────────────────────────────────────────────
+  // REQUEST A FRESH GPS FIX
+  // ────────────────────────────────────────────────────────────────
+
+  navigator.geolocation.getCurrentPosition(
+
+    handleGPSPosition,
+
+    handleGPSError,
+
     {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0
+      enableHighAccuracy:
+        true,
+
+      timeout:
+        30000,
+
+      maximumAge:
+        0
     }
   );
 }
 
-// ── Pathole Markers Layer ───────────────────────────────────────────
-let patholeLayer = L.layerGroup().addTo(map);
 
-function createPatholeMarker(pathole) {
-  const color = SEVERITY_COLORS[pathole.severity] || SEVERITY_COLORS.medium;
-  const radius = SEVERITY_RADIUS[pathole.severity] || 10;
+// Expose GPS functions globally
 
-  const marker = L.circleMarker([pathole.latitude, pathole.longitude], {
-    radius: radius,
-    fillColor: color,
-    fillOpacity: 0.85,
-    color: '#ffffff',
-    weight: 2.5,
-    opacity: 0.95
-  });
+window.startLiveLocation =
+  startLiveLocation;
 
-  const date = pathole.created_at ? new Date(pathole.created_at).toLocaleString() : 'Unknown';
+window.stopLiveLocation =
+  stopLiveLocation;
+
+window.locateUser =
+  locateUser;
+
+
+// ====================================================================
+// POTHOLE MARKERS LAYER
+// ====================================================================
+
+let patholeLayer =
+  L.layerGroup().addTo(map);
+
+
+// ── Create Pathole Marker ───────────────────────────────────────────
+
+function createPatholeMarker(
+  pathole
+) {
+
+  const color =
+    SEVERITY_COLORS[
+      pathole.severity
+    ] ||
+    SEVERITY_COLORS.medium;
+
+
+  const radius =
+    SEVERITY_RADIUS[
+      pathole.severity
+    ] ||
+    10;
+
+
+  const marker =
+    L.circleMarker(
+      [
+        pathole.latitude,
+        pathole.longitude
+      ],
+      {
+        radius: radius,
+
+        fillColor: color,
+
+        fillOpacity: 0.85,
+
+        color: '#ffffff',
+
+        weight: 2.5,
+
+        opacity: 0.95
+      }
+    );
+
+
+  const date =
+    pathole.created_at
+      ? new Date(
+          pathole.created_at
+        ).toLocaleString()
+      : 'Unknown';
+
 
   let distText = '';
-  if (pathole.distToRoute !== undefined && pathole.distToRoute !== null) {
-    distText = `<div>📏 Distance to Route: <strong>${pathole.distToRoute.toFixed(1)} m</strong></div>`;
+
+
+  if (
+    pathole.distToRoute !==
+      undefined &&
+    pathole.distToRoute !==
+      null
+  ) {
+
+    distText =
+      `<div>📏 Distance to Route: <strong>${pathole.distToRoute.toFixed(1)} m</strong></div>`;
   }
 
-  marker.bindPopup(`
-    <div class="popup-title">🕳️ Pathole Detected</div>
-    <span class="popup-severity ${pathole.severity}">${pathole.severity.toUpperCase()}</span>
-    <div class="popup-meta">
-      <div>📍 Coords: ${pathole.latitude.toFixed(5)}, ${pathole.longitude.toFixed(5)}</div>
-      ${distText}
-      <div>📊 Reports: ${pathole.report_count} | Confidence: ${(pathole.confidence * 100).toFixed(0)}%</div>
-      ${pathole.accel_peak ? `<div>⚡ Peak Accel: ${pathole.accel_peak.toFixed(1)} m/s²</div>` : ''}
-      <div>📅 Date: ${date}</div>
+
+  marker.bindPopup(
+    `
+    <div class="popup-title">
+      🕳️ Pathole Detected
     </div>
-  `);
+
+    <span class="popup-severity ${pathole.severity}">
+      ${pathole.severity.toUpperCase()}
+    </span>
+
+    <div class="popup-meta">
+
+      <div>
+        📍 Coords:
+        ${pathole.latitude.toFixed(5)},
+        ${pathole.longitude.toFixed(5)}
+      </div>
+
+      ${distText}
+
+      <div>
+        📊 Reports:
+        ${pathole.report_count}
+        |
+        Confidence:
+        ${(pathole.confidence * 100).toFixed(0)}%
+      </div>
+
+      ${
+        pathole.accel_peak
+          ? `<div>⚡ Peak Accel: ${pathole.accel_peak.toFixed(1)} m/s²</div>`
+          : ''
+      }
+
+      <div>
+        📅 Date:
+        ${date}
+      </div>
+
+    </div>
+    `
+  );
+
 
   return marker;
 }
 
-// ── Load Patholes ───────────────────────────────────────────────────
-async function loadPatholes() {
-  try {
-    const res = await fetch('/api/patholes');
-    const data = await res.json();
 
-    if (data.patholes) {
-      allPatholesData = data.patholes;
-      window.allPatholesData = allPatholesData;  // Keep window reference fresh
+// ====================================================================
+// LOAD POTHOLES
+// ====================================================================
+
+async function loadPatholes() {
+
+  try {
+
+    const res =
+      await fetch(
+        '/api/patholes'
+      );
+
+
+    const data =
+      await res.json();
+
+
+    if (
+      data.patholes
+    ) {
+
+      allPatholesData =
+        data.patholes;
+
+
+      window.allPatholesData =
+        allPatholesData;
+
+
       filterMarkers();
 
-      // Fit map bounds to markers if no user location
-      if (!userLocationMarker && patholeLayer.getLayers().length > 0) {
-        const group = L.featureGroup(patholeLayer.getLayers());
-        map.fitBounds(group.getBounds().pad(0.2));
+
+      // Fit bounds only when GPS is unavailable
+
+      if (
+        !userLocationMarker &&
+        patholeLayer.getLayers().length > 0
+      ) {
+
+        const group =
+          L.featureGroup(
+            patholeLayer.getLayers()
+          );
+
+
+        map.fitBounds(
+          group.getBounds().pad(0.2)
+        );
       }
     }
+
   } catch (err) {
-    console.error('Failed to load patholes:', err);
+
+    console.error(
+      'Failed to load patholes:',
+      err
+    );
   }
 }
 
+
 // ── Refresh ─────────────────────────────────────────────────────────
+
 function refreshMap() {
+
   loadPatholes();
 }
 
-// ── Routing & Search ────────────────────────────────────────────────
-let currentRouteLayer = null;
-let destinationMarker = null;
+
+// ====================================================================
+// ROUTING & SEARCH
+// ====================================================================
+
+let currentRouteLayer =
+  null;
+
+let destinationMarker =
+  null;
+
+
+// ── Search Setup ────────────────────────────────────────────────────
 
 function setupSearch() {
-  const searchInput = document.getElementById('map-search');
-  const suggestionsBox = document.getElementById('search-suggestions');
-  let searchTimeout = null;
 
-  if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      clearTimeout(searchTimeout);
-      const query = e.target.value.trim();
-      
-      if (query.length < 3) {
-        suggestionsBox.style.display = 'none';
-        return;
-      }
-      
-      searchTimeout = setTimeout(() => {
-        let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=50&lang=en`;
-        
-        // Prioritize search results near the current map center
-        if (map) {
-          const center = map.getCenter();
-          url += `&lat=${center.lat}&lon=${center.lng}`;
-        }
-
-        fetch(url)
-          .then(res => res.json())
-          .then(data => {
-            suggestionsBox.innerHTML = '';
-            if (!data.features || data.features.length === 0) {
-              suggestionsBox.innerHTML = '<div class="suggestion-item">No results found</div>';
-            } else {
-              data.features.forEach(feature => {
-                const place = feature.properties;
-                const coords = feature.geometry.coordinates; // [lon, lat]
-                const lat = coords[1];
-                const lon = coords[0];
-                
-                const div = document.createElement('div');
-                div.className = 'suggestion-item';
-                
-                // Clean up the display name for better readability
-                const parts = [];
-                if (place.name) parts.push(place.name);
-                if (place.street) parts.push(place.street);
-                if (place.district) parts.push(place.district);
-                if (place.city || place.town) parts.push(place.city || place.town);
-                if (place.state) parts.push(place.state);
-                
-                const title = place.name || place.street || place.city || place.town || "Unknown Location";
-                const subtitle = parts.filter(p => p !== title).slice(0, 3).join(', ') || place.country || "";
-                
-                div.innerHTML = `<strong>${title}</strong><br><span style="font-size:0.75rem; color:var(--text-muted);">${subtitle}</span>`;
-                div.addEventListener('click', () => {
-                  selectDestination(lat, lon, title);
-                  suggestionsBox.style.display = 'none';
-                  searchInput.value = title;
-                });
-                suggestionsBox.appendChild(div);
-              });
-            }
-            suggestionsBox.style.display = 'block';
-          })
-          .catch(err => console.error('Search error:', err));
-      }, 400);
-    });
-    
-    // Hide suggestions when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!searchInput.contains(e.target) && !suggestionsBox.contains(e.target)) {
-        suggestionsBox.style.display = 'none';
-      }
-    });
-  }
-}
-
-// FEATURE 1: Manual Destination Selection on Map Click/Tap
-map.on('click', function(e) {
-  // Prevent click handling if click target is popup or control
-  if (e.originalEvent && (e.originalEvent._stopped || e.originalEvent.defaultPrevented)) return;
-
-  const lat = e.latlng.lat;
-  const lng = e.latlng.lng;
-
-  const defaultTitle = `Selected Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
-
-  // Update search box text
-  const searchInput = document.getElementById('map-search');
-  if (searchInput) searchInput.value = defaultTitle;
-
-  // Select destination and automatically calculate route!
-  selectDestination(lat, lng, defaultTitle, true);
-
-  // Asynchronous reverse geocoding to update place name
-  fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`)
-    .then(res => res.json())
-    .then(data => {
-      if (data && data.features && data.features.length > 0) {
-        const props = data.features[0].properties;
-        const title = props.name || props.street || props.district || props.city || defaultTitle;
-
-        const destEl = document.getElementById('route-dest-name');
-        if (destEl) destEl.textContent = title;
-        if (searchInput) searchInput.value = title;
-
-        if (destinationMarker) {
-          destinationMarker.setPopupContent(`
-            <div class="popup-title">🎯 Destination</div>
-            <div class="popup-meta" style="margin-bottom:8px; line-height:1.4;">${title}</div>
-            <button class="btn btn-primary btn-sm" onclick="getDirections(${lat}, ${lng})" style="width:100%; padding:8px; margin-top:8px;">
-              🗺️ Recalculate Route
-            </button>
-          `);
-        }
-      }
-    })
-    .catch(err => console.log('Reverse geocode fallback:', err));
-});
-
-window.selectDestination = function(lat, lon, displayName, autoDirections = true) {
-  map.setView([lat, lon], 14);
-
-  if (destinationMarker) {
-    map.removeLayer(destinationMarker);
-  }
-
-  destinationMarker = L.marker([lat, lon]).addTo(map);
-  destinationMarker.bindPopup(`
-    <div class="popup-title">🎯 Destination</div>
-    <div class="popup-meta" style="margin-bottom:8px; line-height:1.4;">${displayName || 'Selected Destination'}</div>
-    <button class="btn btn-primary btn-sm" onclick="getDirections(${lat}, ${lon})" style="width:100%; padding:8px; margin-top:8px;">
-      🗺️ Get Directions
-    </button>
-  `);
-
-  const destNameEl = document.getElementById('route-dest-name');
-  if (destNameEl) destNameEl.textContent = displayName || 'Selected Location';
-
-  if (autoDirections) {
-    getDirections(lat, lon);
-  }
-};
-
-window.routingControl = null;
-
-window.getDirections = function(destLat, destLon) {
-  if (!userLocationMarker) {
-    console.log('User location unknown when calculating route. Attempting geolocation fix...');
-    locateUser();
-    setTimeout(() => {
-      if (userLocationMarker) getDirections(destLat, destLon);
-      else alert("Your current location is unknown. Please wait to be located or check your browser permissions.");
-    }, 800);
-    return;
-  }
-
-  const userLat = userLocationMarker.getLatLng().lat;
-  const userLon = userLocationMarker.getLatLng().lng;
-
-  if (destinationMarker) destinationMarker.closePopup();
-
-  if (window.routingControl) {
-    map.removeControl(window.routingControl);
-    window.routingControl = null;
-  }
-  if (currentRouteLayer) {
-    map.removeLayer(currentRouteLayer);
-    currentRouteLayer = null;
-  }
-
-  window.routingControl = L.Routing.control({
-    waypoints: [
-      L.latLng(userLat, userLon),
-      L.latLng(destLat, destLon)
-    ],
-    routeWhileDragging: false,
-    showAlternatives: false,
-    fitSelectedRoutes: false,
-    lineOptions: {
-      styles: [{ color: '#2563eb', weight: 6, opacity: 0.85 }]
-    },
-    createMarker: function() { return null; } // Use existing user & destination markers
-  }).addTo(map);
-
-  window.routingControl.on('routesfound', function(e) {
-    const route = e.routes[0];
-    currentRouteCoordinates = route.coordinates; // Save active route geometry
-
-    const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
-    const travelTimeMin = Math.round(route.summary.totalTime / 60);
-    const etaStr = travelTimeMin >= 60 
-      ? Math.floor(travelTimeMin / 60) + 'h ' + (travelTimeMin % 60) + 'm'
-      : travelTimeMin + ' min';
-
-    // Manually fit the map to the route with padding and a max zoom limit
-    const bounds = L.latLngBounds(route.coordinates);
-    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
-
-    const routeInfo = document.getElementById('route-info');
-    const routeDistance = document.getElementById('route-distance');
-    const routeEta = document.getElementById('route-eta');
-    const startNameEl = document.getElementById('route-start-name');
-
-    if (routeDistance) routeDistance.textContent = distanceKm;
-    if (routeEta) routeEta.textContent = etaStr;
-    if (startNameEl) startNameEl.textContent = 'Current GPS Location';
-    if (routeInfo) routeInfo.style.display = 'flex';
-
-    // Hide map click hint when route is displayed
-    const hintEl = document.getElementById('map-click-hint');
-    if (hintEl) hintEl.classList.add('hidden');
-
-    // FEATURE 2: Filter and display ONLY potholes along this route
-    filterMarkers();
-
-    // Toast feedback if available
-    const routePotholes = filterPotholesAlongRoute(currentRouteCoordinates, window.ROUTE_PROXIMITY_THRESHOLD_METERS);
-    if (typeof showToast === 'function') {
-      if (routePotholes.length > 0) {
-        showToast(`⚠️ ${routePotholes.length} pothole(s) detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route!`, 'warning');
-      } else {
-        showToast(`✅ Route clear! No potholes detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route.`, 'success');
-      }
-    }
-  });
-
-  window.routingControl.on('routingerror', function(e) {
-    console.error('Routing error:', e);
-    alert('Could not calculate a route to the selected destination. Please try another location.');
-  });
-};
-
-window.clearRoute = function() {
-  currentRouteCoordinates = null;
-
-  if (window.routingControl) {
-    map.removeControl(window.routingControl);
-    window.routingControl = null;
-  }
-  if (currentRouteLayer) {
-    map.removeLayer(currentRouteLayer);
-    currentRouteLayer = null;
-  }
-  if (destinationMarker) {
-    map.removeLayer(destinationMarker);
-    destinationMarker = null;
-  }
-
-  const routeInfo = document.getElementById('route-info');
-  if (routeInfo) routeInfo.style.display = 'none';
-
-  const hintEl = document.getElementById('map-click-hint');
-  if (hintEl) hintEl.classList.remove('hidden');
-
-  const searchInput = document.getElementById('map-search');
-  if (searchInput) searchInput.value = '';
-
-  // Clear pothole markers from map when route is cleared
-  filterMarkers();
-};
-
-// ── Route Proximity & Filtering Logic (Feature 2) ───────────────────
-
-/**
- * Calculates perpendicular distance in meters from point (pLat, pLng) to line segment (aLat, aLng)-(bLat, bLng).
- */
-function getDistanceToSegmentMeters(pLat, pLng, aLat, aLng, bLat, bLng) {
-  const midLatRad = ((aLat + bLat) / 2) * (Math.PI / 180);
-  const cosMidLat = Math.cos(midLatRad);
-  const DEG_TO_M_LAT = 111320;
-  const DEG_TO_M_LNG = 111320 * cosMidLat;
-
-  const ax = 0;
-  const ay = 0;
-  const bx = (bLng - aLng) * DEG_TO_M_LNG;
-  const by = (bLat - aLat) * DEG_TO_M_LAT;
-  const px = (pLng - aLng) * DEG_TO_M_LNG;
-  const py = (pLat - aLat) * DEG_TO_M_LAT;
-
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lenSq = dx * dx + dy * dy;
-
-  let t = 0;
-  if (lenSq > 0) {
-    t = (px * dx + py * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-  }
-
-  const projX = ax + t * dx;
-  const projY = ay + t * dy;
-
-  const distSq = (px - projX) * (px - projX) + (py - projY) * (py - projY);
-  return Math.sqrt(distSq);
-}
-
-/**
- * Calculates minimum distance in meters from a pothole to the route polyline.
- */
-function getMinDistanceToRoute(pLat, pLng, routeCoords) {
-  if (!routeCoords || routeCoords.length < 2) return Infinity;
-
-  let minDistance = Infinity;
-  for (let i = 0; i < routeCoords.length - 1; i++) {
-    const p1 = routeCoords[i];
-    const p2 = routeCoords[i + 1];
-
-    const d = getDistanceToSegmentMeters(
-      pLat, pLng,
-      p1.lat, p1.lng,
-      p2.lat, p2.lng
+  const searchInput =
+    document.getElementById(
+      'map-search'
     );
 
-    if (d < minDistance) {
-      minDistance = d;
-      if (minDistance < 1) break;
+
+  const suggestionsBox =
+    document.getElementById(
+      'search-suggestions'
+    );
+
+
+  let searchTimeout =
+    null;
+
+
+  if (searchInput) {
+
+    searchInput.addEventListener(
+      'input',
+      (e) => {
+
+        clearTimeout(
+          searchTimeout
+        );
+
+
+        const query =
+          e.target.value.trim();
+
+
+        if (
+          query.length < 3
+        ) {
+
+          suggestionsBox.style.display =
+            'none';
+
+          return;
+        }
+
+
+        searchTimeout =
+          setTimeout(
+            () => {
+
+              let url =
+                `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=50&lang=en`;
+
+
+              // Prioritize results near current map center
+
+              if (map) {
+
+                const center =
+                  map.getCenter();
+
+
+                url +=
+                  `&lat=${center.lat}&lon=${center.lng}`;
+              }
+
+
+              fetch(url)
+
+                .then(
+                  res =>
+                    res.json()
+                )
+
+                .then(
+                  data => {
+
+                    suggestionsBox.innerHTML =
+                      '';
+
+
+                    if (
+                      !data.features ||
+                      data.features.length === 0
+                    ) {
+
+                      suggestionsBox.innerHTML =
+                        '<div class="suggestion-item">No results found</div>';
+
+                    } else {
+
+                      data.features.forEach(
+                        feature => {
+
+                          const place =
+                            feature.properties;
+
+
+                          const coords =
+                            feature.geometry.coordinates;
+
+
+                          const lat =
+                            coords[1];
+
+
+                          const lon =
+                            coords[0];
+
+
+                          const div =
+                            document.createElement(
+                              'div'
+                            );
+
+
+                          div.className =
+                            'suggestion-item';
+
+
+                          const parts =
+                            [];
+
+
+                          if (
+                            place.name
+                          ) {
+
+                            parts.push(
+                              place.name
+                            );
+                          }
+
+
+                          if (
+                            place.street
+                          ) {
+
+                            parts.push(
+                              place.street
+                            );
+                          }
+
+
+                          if (
+                            place.district
+                          ) {
+
+                            parts.push(
+                              place.district
+                            );
+                          }
+
+
+                          if (
+                            place.city ||
+                            place.town
+                          ) {
+
+                            parts.push(
+                              place.city ||
+                              place.town
+                            );
+                          }
+
+
+                          if (
+                            place.state
+                          ) {
+
+                            parts.push(
+                              place.state
+                            );
+                          }
+
+
+                          const title =
+                            place.name ||
+                            place.street ||
+                            place.city ||
+                            place.town ||
+                            'Unknown Location';
+
+
+                          const subtitle =
+                            parts
+                              .filter(
+                                p =>
+                                  p !==
+                                  title
+                              )
+                              .slice(
+                                0,
+                                3
+                              )
+                              .join(
+                                ', '
+                              ) ||
+                            place.country ||
+                            '';
+
+
+                          div.innerHTML =
+                            `
+                            <strong>
+                              ${title}
+                            </strong>
+
+                            <br>
+
+                            <span
+                              style="
+                                font-size:0.75rem;
+                                color:var(--text-muted);
+                              "
+                            >
+                              ${subtitle}
+                            </span>
+                            `;
+
+
+                          div.addEventListener(
+                            'click',
+                            () => {
+
+                              selectDestination(
+                                lat,
+                                lon,
+                                title
+                              );
+
+
+                              suggestionsBox.style.display =
+                                'none';
+
+
+                              searchInput.value =
+                                title;
+                            }
+                          );
+
+
+                          suggestionsBox.appendChild(
+                            div
+                          );
+                        }
+                      );
+                    }
+
+
+                    suggestionsBox.style.display =
+                      'block';
+                  }
+                )
+
+                .catch(
+                  err =>
+                    console.error(
+                      'Search error:',
+                      err
+                    )
+                );
+
+            },
+            400
+          );
+      }
+    );
+
+
+    // Hide suggestions when clicking outside
+
+    document.addEventListener(
+      'click',
+      (e) => {
+
+        if (
+          !searchInput.contains(
+            e.target
+          ) &&
+          !suggestionsBox.contains(
+            e.target
+          )
+        ) {
+
+          suggestionsBox.style.display =
+            'none';
+        }
+      }
+    );
+  }
+}
+
+
+// ====================================================================
+// MAP CLICK → DESTINATION
+// ====================================================================
+
+map.on(
+  'click',
+  function(e) {
+
+    if (
+      e.originalEvent &&
+      (
+        e.originalEvent._stopped ||
+        e.originalEvent.defaultPrevented
+      )
+    ) {
+
+      return;
+    }
+
+
+    const lat =
+      e.latlng.lat;
+
+
+    const lng =
+      e.latlng.lng;
+
+
+    const defaultTitle =
+      `Selected Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+
+
+    // Update search box
+
+    const searchInput =
+      document.getElementById(
+        'map-search'
+      );
+
+
+    if (searchInput) {
+
+      searchInput.value =
+        defaultTitle;
+    }
+
+
+    // Calculate route
+
+    selectDestination(
+      lat,
+      lng,
+      defaultTitle,
+      true
+    );
+
+
+    // Reverse geocoding
+
+    fetch(
+      `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`
+    )
+
+      .then(
+        res =>
+          res.json()
+      )
+
+      .then(
+        data => {
+
+          if (
+            data &&
+            data.features &&
+            data.features.length > 0
+          ) {
+
+            const props =
+              data.features[0].properties;
+
+
+            const title =
+              props.name ||
+              props.street ||
+              props.district ||
+              props.city ||
+              defaultTitle;
+
+
+            const destEl =
+              document.getElementById(
+                'route-dest-name'
+              );
+
+
+            if (destEl) {
+
+              destEl.textContent =
+                title;
+            }
+
+
+            if (searchInput) {
+
+              searchInput.value =
+                title;
+            }
+
+
+            if (
+              destinationMarker
+            ) {
+
+              destinationMarker.setPopupContent(
+                `
+                <div class="popup-title">
+                  🎯 Destination
+                </div>
+
+                <div
+                  class="popup-meta"
+                  style="
+                    margin-bottom:8px;
+                    line-height:1.4;
+                  "
+                >
+                  ${title}
+                </div>
+
+                <button
+                  class="btn btn-primary btn-sm"
+                  onclick="getDirections(${lat}, ${lng})"
+                  style="
+                    width:100%;
+                    padding:8px;
+                    margin-top:8px;
+                  "
+                >
+                  🗺️ Recalculate Route
+                </button>
+                `
+              );
+            }
+          }
+        }
+      )
+
+      .catch(
+        err =>
+          console.log(
+            'Reverse geocode fallback:',
+            err
+          )
+      );
+  }
+);
+
+
+// ====================================================================
+// SELECT DESTINATION
+// ====================================================================
+
+window.selectDestination =
+  function(
+    lat,
+    lon,
+    displayName,
+    autoDirections = true
+  ) {
+
+    map.setView(
+      [
+        lat,
+        lon
+      ],
+      14
+    );
+
+
+    if (
+      destinationMarker
+    ) {
+
+      map.removeLayer(
+        destinationMarker
+      );
+    }
+
+
+    destinationMarker =
+      L.marker(
+        [
+          lat,
+          lon
+        ]
+      )
+      .addTo(map);
+
+
+    destinationMarker.bindPopup(
+      `
+      <div class="popup-title">
+        🎯 Destination
+      </div>
+
+      <div
+        class="popup-meta"
+        style="
+          margin-bottom:8px;
+          line-height:1.4;
+        "
+      >
+        ${
+          displayName ||
+          'Selected Destination'
+        }
+      </div>
+
+      <button
+        class="btn btn-primary btn-sm"
+        onclick="getDirections(${lat}, ${lon})"
+        style="
+          width:100%;
+          padding:8px;
+          margin-top:8px;
+        "
+      >
+        🗺️ Get Directions
+      </button>
+      `
+    );
+
+
+    const destNameEl =
+      document.getElementById(
+        'route-dest-name'
+      );
+
+
+    if (destNameEl) {
+
+      destNameEl.textContent =
+        displayName ||
+        'Selected Location';
+    }
+
+
+    if (autoDirections) {
+
+      getDirections(
+        lat,
+        lon
+      );
+    }
+  };
+
+
+// ====================================================================
+// GET DIRECTIONS
+// ====================================================================
+
+window.routingControl =
+  null;
+
+
+window.getDirections =
+  function(
+    destLat,
+    destLon
+  ) {
+
+    // User GPS is required
+
+    if (
+      !userLocationMarker
+    ) {
+
+      console.log(
+        'User location unknown. Requesting GPS...'
+      );
+
+
+      locateUser();
+
+
+      setTimeout(
+        () => {
+
+          if (
+            userLocationMarker
+          ) {
+
+            getDirections(
+              destLat,
+              destLon
+            );
+
+          } else {
+
+            alert(
+              'Your current GPS location is not available. Please allow location permission and wait for GPS.'
+            );
+          }
+
+        },
+        1500
+      );
+
+
+      return;
+    }
+
+
+    const userLat =
+      userLocationMarker
+        .getLatLng()
+        .lat;
+
+
+    const userLon =
+      userLocationMarker
+        .getLatLng()
+        .lng;
+
+
+    if (
+      destinationMarker
+    ) {
+
+      destinationMarker.closePopup();
+    }
+
+
+    // Remove old route
+
+    if (
+      window.routingControl
+    ) {
+
+      map.removeControl(
+        window.routingControl
+      );
+
+      window.routingControl =
+        null;
+    }
+
+
+    if (
+      currentRouteLayer
+    ) {
+
+      map.removeLayer(
+        currentRouteLayer
+      );
+
+      currentRouteLayer =
+        null;
+    }
+
+
+    // Create route
+
+    window.routingControl =
+      L.Routing.control(
+        {
+
+          waypoints: [
+
+            L.latLng(
+              userLat,
+              userLon
+            ),
+
+            L.latLng(
+              destLat,
+              destLon
+            )
+
+          ],
+
+          routeWhileDragging:
+            false,
+
+          showAlternatives:
+            false,
+
+          fitSelectedRoutes:
+            false,
+
+          lineOptions: {
+
+            styles: [
+
+              {
+                color:
+                  '#2563eb',
+
+                weight:
+                  6,
+
+                opacity:
+                  0.85
+              }
+
+            ]
+          },
+
+
+          createMarker:
+            function() {
+
+              return null;
+            }
+
+        }
+      )
+      .addTo(map);
+
+
+    // Route found
+
+    window.routingControl.on(
+      'routesfound',
+      function(e) {
+
+        const route =
+          e.routes[0];
+
+
+        currentRouteCoordinates =
+          route.coordinates;
+
+
+        const distanceKm =
+          (
+            route.summary.totalDistance /
+            1000
+          ).toFixed(1);
+
+
+        const travelTimeMin =
+          Math.round(
+            route.summary.totalTime /
+            60
+          );
+
+
+        const etaStr =
+          travelTimeMin >= 60
+
+            ? Math.floor(
+                travelTimeMin / 60
+              ) +
+              'h ' +
+              (
+                travelTimeMin % 60
+              ) +
+              'm'
+
+            : travelTimeMin +
+              ' min';
+
+
+        // Fit route
+
+        const bounds =
+          L.latLngBounds(
+            route.coordinates
+          );
+
+
+        map.fitBounds(
+          bounds,
+          {
+            padding:
+              [
+                50,
+                50
+              ],
+
+            maxZoom:
+              15
+          }
+        );
+
+
+        // Route information
+
+        const routeInfo =
+          document.getElementById(
+            'route-info'
+          );
+
+
+        const routeDistance =
+          document.getElementById(
+            'route-distance'
+          );
+
+
+        const routeEta =
+          document.getElementById(
+            'route-eta'
+          );
+
+
+        const startNameEl =
+          document.getElementById(
+            'route-start-name'
+          );
+
+
+        if (
+          routeDistance
+        ) {
+
+          routeDistance.textContent =
+            distanceKm;
+        }
+
+
+        if (
+          routeEta
+        ) {
+
+          routeEta.textContent =
+            etaStr;
+        }
+
+
+        if (
+          startNameEl
+        ) {
+
+          startNameEl.textContent =
+            'Current GPS Location';
+        }
+
+
+        if (
+          routeInfo
+        ) {
+
+          routeInfo.style.display =
+            'flex';
+        }
+
+
+        // Hide map click hint
+
+        const hintEl =
+          document.getElementById(
+            'map-click-hint'
+          );
+
+
+        if (hintEl) {
+
+          hintEl.classList.add(
+            'hidden'
+          );
+        }
+
+
+        // Filter potholes along route
+
+        filterMarkers();
+
+
+        const routePotholes =
+          filterPotholesAlongRoute(
+            currentRouteCoordinates,
+            window.ROUTE_PROXIMITY_THRESHOLD_METERS
+          );
+
+
+        // Toast
+
+        if (
+          typeof showToast ===
+          'function'
+        ) {
+
+          if (
+            routePotholes.length >
+            0
+          ) {
+
+            showToast(
+              `⚠️ ${routePotholes.length} pothole(s) detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route!`,
+              'warning'
+            );
+
+          } else {
+
+            showToast(
+              `✅ Route clear! No potholes detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route.`,
+              'success'
+            );
+          }
+        }
+      }
+    );
+
+
+    // Routing error
+
+    window.routingControl.on(
+      'routingerror',
+      function(e) {
+
+        console.error(
+          'Routing error:',
+          e
+        );
+
+
+        alert(
+          'Could not calculate a route to the selected destination. Please try another location.'
+        );
+      }
+    );
+  };
+
+
+// ====================================================================
+// CLEAR ROUTE
+// ====================================================================
+
+window.clearRoute =
+  function() {
+
+    currentRouteCoordinates =
+      null;
+
+
+    if (
+      window.routingControl
+    ) {
+
+      map.removeControl(
+        window.routingControl
+      );
+
+      window.routingControl =
+        null;
+    }
+
+
+    if (
+      currentRouteLayer
+    ) {
+
+      map.removeLayer(
+        currentRouteLayer
+      );
+
+      currentRouteLayer =
+        null;
+    }
+
+
+    if (
+      destinationMarker
+    ) {
+
+      map.removeLayer(
+        destinationMarker
+      );
+
+      destinationMarker =
+        null;
+    }
+
+
+    const routeInfo =
+      document.getElementById(
+        'route-info'
+      );
+
+
+    if (routeInfo) {
+
+      routeInfo.style.display =
+        'none';
+    }
+
+
+    const hintEl =
+      document.getElementById(
+        'map-click-hint'
+      );
+
+
+    if (hintEl) {
+
+      hintEl.classList.remove(
+        'hidden'
+      );
+    }
+
+
+    const searchInput =
+      document.getElementById(
+        'map-search'
+      );
+
+
+    if (searchInput) {
+
+      searchInput.value =
+        '';
+    }
+
+
+    filterMarkers();
+  };
+
+
+// ====================================================================
+// ROUTE PROXIMITY
+// ====================================================================
+
+function getDistanceToSegmentMeters(
+  pLat,
+  pLng,
+  aLat,
+  aLng,
+  bLat,
+  bLng
+) {
+
+  const midLatRad =
+    (
+      (aLat + bLat) /
+      2
+    ) *
+    (
+      Math.PI /
+      180
+    );
+
+
+  const cosMidLat =
+    Math.cos(
+      midLatRad
+    );
+
+
+  const DEG_TO_M_LAT =
+    111320;
+
+
+  const DEG_TO_M_LNG =
+    111320 *
+    cosMidLat;
+
+
+  const ax =
+    0;
+
+
+  const ay =
+    0;
+
+
+  const bx =
+    (
+      bLng -
+      aLng
+    ) *
+    DEG_TO_M_LNG;
+
+
+  const by =
+    (
+      bLat -
+      aLat
+    ) *
+    DEG_TO_M_LAT;
+
+
+  const px =
+    (
+      pLng -
+      aLng
+    ) *
+    DEG_TO_M_LNG;
+
+
+  const py =
+    (
+      pLat -
+      aLat
+    ) *
+    DEG_TO_M_LAT;
+
+
+  const dx =
+    bx -
+    ax;
+
+
+  const dy =
+    by -
+    ay;
+
+
+  const lenSq =
+    dx * dx +
+    dy * dy;
+
+
+  let t =
+    0;
+
+
+  if (
+    lenSq > 0
+  ) {
+
+    t =
+      (
+        px * dx +
+        py * dy
+      ) /
+      lenSq;
+
+
+    t =
+      Math.max(
+        0,
+        Math.min(
+          1,
+          t
+        )
+      );
+  }
+
+
+  const projX =
+    ax +
+    t * dx;
+
+
+  const projY =
+    ay +
+    t * dy;
+
+
+  const distSq =
+    (
+      px -
+      projX
+    ) *
+    (
+      px -
+      projX
+    ) +
+
+    (
+      py -
+      projY
+    ) *
+    (
+      py -
+      projY
+    );
+
+
+  return Math.sqrt(
+    distSq
+  );
+}
+
+
+// ── Minimum Distance to Route ───────────────────────────────────────
+
+function getMinDistanceToRoute(
+  pLat,
+  pLng,
+  routeCoords
+) {
+
+  if (
+    !routeCoords ||
+    routeCoords.length < 2
+  ) {
+
+    return Infinity;
+  }
+
+
+  let minDistance =
+    Infinity;
+
+
+  for (
+    let i = 0;
+    i <
+      routeCoords.length - 1;
+    i++
+  ) {
+
+    const p1 =
+      routeCoords[i];
+
+
+    const p2 =
+      routeCoords[
+        i + 1
+      ];
+
+
+    const d =
+      getDistanceToSegmentMeters(
+        pLat,
+        pLng,
+
+        p1.lat,
+        p1.lng,
+
+        p2.lat,
+        p2.lng
+      );
+
+
+    if (
+      d <
+      minDistance
+    ) {
+
+      minDistance =
+        d;
+
+
+      if (
+        minDistance < 1
+      ) {
+
+        break;
+      }
     }
   }
+
 
   return minDistance;
 }
 
-/**
- * Filters all active stored potholes to return ONLY those within thresholdMeters of routeCoords.
- */
-function filterPotholesAlongRoute(routeCoords, thresholdMeters) {
-  if (!routeCoords || routeCoords.length === 0) return [];
 
-  const showLow = document.getElementById('filter-low')?.checked ?? true;
-  const showMed = document.getElementById('filter-medium')?.checked ?? true;
-  const showHigh = document.getElementById('filter-high')?.checked ?? true;
+// ── Filter Potholes Along Route ─────────────────────────────────────
 
-  const routePotholes = [];
+function filterPotholesAlongRoute(
+  routeCoords,
+  thresholdMeters
+) {
 
-  allPatholesData.forEach(p => {
-    if (!p.is_active) return;
-    if (p.severity === 'low' && !showLow) return;
-    if (p.severity === 'medium' && !showMed) return;
-    if (p.severity === 'high' && !showHigh) return;
+  if (
+    !routeCoords ||
+    routeCoords.length === 0
+  ) {
 
-    const dist = getMinDistanceToRoute(p.latitude, p.longitude, routeCoords);
+    return [];
+  }
 
-    if (dist <= thresholdMeters) {
-      p.distToRoute = dist;
-      routePotholes.push(p);
+
+  const showLow =
+    document.getElementById(
+      'filter-low'
+    )?.checked ??
+    true;
+
+
+  const showMed =
+    document.getElementById(
+      'filter-medium'
+    )?.checked ??
+    true;
+
+
+  const showHigh =
+    document.getElementById(
+      'filter-high'
+    )?.checked ??
+    true;
+
+
+  const routePotholes =
+    [];
+
+
+  allPatholesData.forEach(
+    p => {
+
+      if (
+        !p.is_active
+      ) {
+
+        return;
+      }
+
+
+      if (
+        p.severity ===
+          'low' &&
+        !showLow
+      ) {
+
+        return;
+      }
+
+
+      if (
+        p.severity ===
+          'medium' &&
+        !showMed
+      ) {
+
+        return;
+      }
+
+
+      if (
+        p.severity ===
+          'high' &&
+        !showHigh
+      ) {
+
+        return;
+      }
+
+
+      const dist =
+        getMinDistanceToRoute(
+          p.latitude,
+          p.longitude,
+          routeCoords
+        );
+
+
+      if (
+        dist <=
+        thresholdMeters
+      ) {
+
+        p.distToRoute =
+          dist;
+
+
+        routePotholes.push(
+          p
+        );
+      }
     }
-  });
+  );
+
 
   return routePotholes;
 }
 
-window.filterMarkers = function() {
-  patholeLayer.clearLayers();
 
-  // FEATURE 2: When there is no active route, do NOT display all potholes globally
-  if (!currentRouteCoordinates || currentRouteCoordinates.length === 0) {
-    const countEl = document.getElementById('route-potholes-count');
-    if (countEl) countEl.textContent = '0';
+// ── Filter Markers ──────────────────────────────────────────────────
+
+window.filterMarkers =
+  function() {
+
+    patholeLayer.clearLayers();
+
+
+    /*
+     * IMPORTANT:
+     *
+     * No active route =
+     * no pothole markers.
+     *
+     * This keeps your map clean.
+     */
+
+    if (
+      !currentRouteCoordinates ||
+      currentRouteCoordinates.length === 0
+    ) {
+
+      const countEl =
+        document.getElementById(
+          'route-potholes-count'
+        );
+
+
+      if (countEl) {
+
+        countEl.textContent =
+          '0';
+      }
+
+
+      return;
+    }
+
+
+    const routePotholes =
+      filterPotholesAlongRoute(
+        currentRouteCoordinates,
+        window.ROUTE_PROXIMITY_THRESHOLD_METERS
+      );
+
+
+    routePotholes.forEach(
+      p => {
+
+        const marker =
+          createPatholeMarker(
+            p
+          );
+
+
+        patholeLayer.addLayer(
+          marker
+        );
+      }
+    );
+
+
+    const countEl =
+      document.getElementById(
+        'route-potholes-count'
+      );
+
+
+    if (countEl) {
+
+      countEl.textContent =
+        routePotholes.length;
+    }
+  };
+
+
+// ====================================================================
+// MUTE / AUDIO WARNINGS
+// ====================================================================
+
+window.toggleMute =
+  function() {
+
+    isMuted =
+      !isMuted;
+
+
+    const btn =
+      document.getElementById(
+        'btn-mute'
+      );
+
+
+    if (btn) {
+
+      btn.textContent =
+        isMuted
+          ? '🔇'
+          : '🔊';
+
+
+      btn.title =
+        isMuted
+          ? 'Unmute Audio Warnings'
+          : 'Mute Audio Warnings';
+    }
+  };
+
+
+// ── Proximity Warning ───────────────────────────────────────────────
+
+function checkProximity(
+  lat,
+  lng
+) {
+
+  if (
+    isMuted ||
+    allPatholesData.length === 0
+  ) {
+
     return;
   }
 
-  // Display ONLY potholes located within threshold distance (25m) of the active route
-  const routePotholes = filterPotholesAlongRoute(
-    currentRouteCoordinates,
-    window.ROUTE_PROXIMITY_THRESHOLD_METERS
-  );
 
-  routePotholes.forEach(p => {
-    const marker = createPatholeMarker(p);
-    patholeLayer.addLayer(marker);
-  });
+  allPatholesData.forEach(
+    p => {
 
-  const countEl = document.getElementById('route-potholes-count');
-  if (countEl) countEl.textContent = routePotholes.length;
-};
+      const dist =
+        getDistance(
+          lat,
+          lng,
+          p.latitude,
+          p.longitude
+        );
 
-window.toggleMute = function() {
-  isMuted = !isMuted;
-  const btn = document.getElementById('btn-mute');
-  if (btn) {
-    btn.textContent = isMuted ? '🔇' : '🔊';
-    btn.title = isMuted ? 'Unmute Audio Warnings' : 'Mute Audio Warnings';
-  }
-};
 
-// Proximity Warning helpers
-function checkProximity(lat, lng) {
-  if (isMuted || allPatholesData.length === 0) return;
-  allPatholesData.forEach(p => {
-    const dist = getDistance(lat, lng, p.latitude, p.longitude);
-    if (dist <= 50) {
-      if (!alertedPatholes.has(p.id)) {
-        alertedPatholes.add(p.id);
-        playAlertSound();
-        setTimeout(() => {
-          speakAlert(`Warning: ${p.severity} severity pathole ahead.`);
-        }, 400);
+      if (
+        dist <= 50
+      ) {
+
+        if (
+          !alertedPatholes.has(
+            p.id
+          )
+        ) {
+
+          alertedPatholes.add(
+            p.id
+          );
+
+
+          playAlertSound();
+
+
+          setTimeout(
+            () => {
+
+              speakAlert(
+                `Warning: ${p.severity} severity pathole ahead.`
+              );
+
+            },
+            400
+          );
+        }
+
+      } else if (
+        dist > 100
+      ) {
+
+        alertedPatholes.delete(
+          p.id
+        );
       }
-    } else if (dist > 100) {
-      alertedPatholes.delete(p.id);
     }
-  });
+  );
 }
 
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3; // metres
-  const phi1 = lat1 * Math.PI / 180;
-  const phi2 = lat2 * Math.PI / 180;
-  const deltaPhi = (lat2 - lat1) * Math.PI / 180;
-  const deltaLambda = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-            Math.cos(phi1) * Math.cos(phi2) *
-            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+// ── Distance Calculation ────────────────────────────────────────────
+
+function getDistance(
+  lat1,
+  lon1,
+  lat2,
+  lon2
+) {
+
+  const R =
+    6371e3;
+
+
+  const phi1 =
+    lat1 *
+    Math.PI /
+    180;
+
+
+  const phi2 =
+    lat2 *
+    Math.PI /
+    180;
+
+
+  const deltaPhi =
+    (
+      lat2 -
+      lat1
+    ) *
+    Math.PI /
+    180;
+
+
+  const deltaLambda =
+    (
+      lon2 -
+      lon1
+    ) *
+    Math.PI /
+    180;
+
+
+  const a =
+
+    Math.sin(
+      deltaPhi / 2
+    ) *
+    Math.sin(
+      deltaPhi / 2
+    ) +
+
+    Math.cos(
+      phi1
+    ) *
+    Math.cos(
+      phi2
+    ) *
+
+    Math.sin(
+      deltaLambda / 2
+    ) *
+    Math.sin(
+      deltaLambda / 2
+    );
+
+
+  const c =
+    2 *
+    Math.atan2(
+      Math.sqrt(a),
+      Math.sqrt(
+        1 - a
+      )
+    );
+
+
   return R * c;
 }
 
+
+// ── Alert Sound ─────────────────────────────────────────────────────
+
 function playAlertSound() {
+
   try {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // 880Hz pitch (A5)
-    gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
-    
+
+    const audioCtx =
+      new (
+        window.AudioContext ||
+        window.webkitAudioContext
+      )();
+
+
+    const oscillator =
+      audioCtx.createOscillator();
+
+
+    const gainNode =
+      audioCtx.createGain();
+
+
+    oscillator.connect(
+      gainNode
+    );
+
+
+    gainNode.connect(
+      audioCtx.destination
+    );
+
+
+    oscillator.type =
+      'sine';
+
+
+    oscillator.frequency.setValueAtTime(
+      880,
+      audioCtx.currentTime
+    );
+
+
+    gainNode.gain.setValueAtTime(
+      0.15,
+      audioCtx.currentTime
+    );
+
+
     oscillator.start();
-    oscillator.stop(audioCtx.currentTime + 0.35);
+
+
+    oscillator.stop(
+      audioCtx.currentTime +
+      0.35
+    );
+
   } catch (e) {
-    console.error("AudioContext failed:", e);
+
+    console.error(
+      'AudioContext failed:',
+      e
+    );
   }
 }
 
-function speakAlert(text) {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.volume = 1.0;
-    window.speechSynthesis.speak(utterance);
+
+// ── Voice Alert ─────────────────────────────────────────────────────
+
+function speakAlert(
+  text
+) {
+
+  if (
+    'speechSynthesis' in
+    window
+  ) {
+
+    const utterance =
+      new SpeechSynthesisUtterance(
+        text
+      );
+
+
+    utterance.rate =
+      1.0;
+
+
+    utterance.volume =
+      1.0;
+
+
+    window.speechSynthesis.speak(
+      utterance
+    );
   }
 }
 
-// Manual Pathole Reporting on Map click/contextmenu
-map.on('contextmenu', function(e) {
-  const lat = e.latlng.lat;
-  const lng = e.latlng.lng;
-  
-  const popupContent = `
-    <form class="manual-report-form" onsubmit="submitManualReport(event)">
-      <h4>🕳️ Report Pathole</h4>
-      <input type="hidden" id="manual-lat" value="${lat}">
-      <input type="hidden" id="manual-lng" value="${lng}">
-      <div class="form-group">
-        <label for="manual-severity">Severity</label>
-        <select class="form-control" id="manual-severity" style="width:100%;">
-          <option value="low">Low</option>
-          <option value="medium" selected>Medium</option>
-          <option value="high">High</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-top: 6px;">
-        <label for="manual-reporter">Your Name (Optional)</label>
-        <input type="text" class="form-control" id="manual-reporter" placeholder="Anonymous" style="width:100%;">
-      </div>
-      <button type="submit" class="btn btn-primary btn-sm" style="margin-top:10px; width:100%; display:block;">Report</button>
-    </form>
-  `;
-  
-  L.popup()
-    .setLatLng(e.latlng)
-    .setContent(popupContent)
-    .openOn(map);
-});
 
-window.submitManualReport = async function(event) {
-  event.preventDefault();
-  const lat = parseFloat(document.getElementById('manual-lat').value);
-  const lng = parseFloat(document.getElementById('manual-lng').value);
-  const severity = document.getElementById('manual-severity').value;
-  const reportedBy = document.getElementById('manual-reporter').value || 'anonymous';
-  
-  const accelPeak = severity === 'high' ? 26.0 : severity === 'medium' ? 18.0 : 10.0;
+// ====================================================================
+// MANUAL POTHOLE REPORTING
+// ====================================================================
 
-  try {
-    const res = await fetch('/api/patholes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        latitude: lat,
-        longitude: lng,
-        severity: severity,
-        reported_by: reportedBy,
-        accel_peak: accelPeak,
-        confidence: 1.0
-      })
-    });
-    
-    const data = await res.json();
-    if (data.status === 'success') {
-      map.closePopup();
-      alert("Pathole reported successfully!");
-      loadPatholes();
-    } else {
-      alert("Failed to report: " + data.message);
+map.on(
+  'contextmenu',
+  function(e) {
+
+    const lat =
+      e.latlng.lat;
+
+
+    const lng =
+      e.latlng.lng;
+
+
+    const popupContent =
+
+      `
+      <form
+        class="manual-report-form"
+        onsubmit="submitManualReport(event)"
+      >
+
+        <h4>
+          🕳️ Report Pathole
+        </h4>
+
+
+        <input
+          type="hidden"
+          id="manual-lat"
+          value="${lat}"
+        >
+
+
+        <input
+          type="hidden"
+          id="manual-lng"
+          value="${lng}"
+        >
+
+
+        <div class="form-group">
+
+          <label
+            for="manual-severity"
+          >
+            Severity
+          </label>
+
+
+          <select
+            class="form-control"
+            id="manual-severity"
+            style="width:100%;"
+          >
+
+            <option value="low">
+              Low
+            </option>
+
+            <option
+              value="medium"
+              selected
+            >
+              Medium
+            </option>
+
+            <option value="high">
+              High
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div
+          class="form-group"
+          style="margin-top:6px;"
+        >
+
+          <label
+            for="manual-reporter"
+          >
+            Your Name (Optional)
+          </label>
+
+
+          <input
+            type="text"
+            class="form-control"
+            id="manual-reporter"
+            placeholder="Anonymous"
+            style="width:100%;"
+          >
+
+        </div>
+
+
+        <button
+          type="submit"
+          class="btn btn-primary btn-sm"
+          style="
+            margin-top:10px;
+            width:100%;
+            display:block;
+          "
+        >
+          Report
+        </button>
+
+      </form>
+      `;
+
+
+    L.popup()
+
+      .setLatLng(
+        e.latlng
+      )
+
+      .setContent(
+        popupContent
+      )
+
+      .openOn(map);
+  }
+);
+
+
+// ── Submit Manual Report ────────────────────────────────────────────
+
+window.submitManualReport =
+  async function(event) {
+
+    event.preventDefault();
+
+
+    const lat =
+      parseFloat(
+        document.getElementById(
+          'manual-lat'
+        ).value
+      );
+
+
+    const lng =
+      parseFloat(
+        document.getElementById(
+          'manual-lng'
+        ).value
+      );
+
+
+    const severity =
+      document.getElementById(
+        'manual-severity'
+      ).value;
+
+
+    const reportedBy =
+      document.getElementById(
+        'manual-reporter'
+      ).value ||
+      'anonymous';
+
+
+    const accelPeak =
+      severity === 'high'
+        ? 26.0
+        : severity === 'medium'
+          ? 18.0
+          : 10.0;
+
+
+    try {
+
+      const res =
+        await fetch(
+          '/api/patholes',
+          {
+            method:
+              'POST',
+
+            headers:
+              {
+                'Content-Type':
+                  'application/json'
+              },
+
+            body:
+              JSON.stringify(
+                {
+                  latitude:
+                    lat,
+
+                  longitude:
+                    lng,
+
+                  severity:
+                    severity,
+
+                  reported_by:
+                    reportedBy,
+
+                  accel_peak:
+                    accelPeak,
+
+                  confidence:
+                    1.0
+                }
+              )
+          }
+        );
+
+
+      const data =
+        await res.json();
+
+
+      if (
+        data.status ===
+        'success'
+      ) {
+
+        map.closePopup();
+
+
+        alert(
+          'Pathole reported successfully!'
+        );
+
+
+        loadPatholes();
+
+      } else {
+
+        alert(
+          'Failed to report: ' +
+          data.message
+        );
+      }
+
+    } catch (err) {
+
+      console.error(
+        'Error reporting manual pathole:',
+        err
+      );
+
+
+      alert(
+        'Network error. Queueing reports offline is active on Detection ride page.'
+      );
     }
-  } catch (err) {
-    console.error("Error reporting manual pathole:", err);
-    alert("Network error. Queueing reports offline is active on Detection ride page.");
-  }
-};
+  };
 
-// ── Initial Load ────────────────────────────────────────────────────
+
+// ====================================================================
+// INITIAL LOAD
+// ====================================================================
+
 setupSearch();
+
 loadPatholes();
 
-// Auto-locate on load
+
+// ── Auto-locate on load ─────────────────────────────────────────────
+
+// This now requests REAL GPS only.
+// There is NO simulated location fallback.
+
 locateUser();
 
-// Auto-refresh every 30 seconds
-setInterval(refreshMap, 30000);
 
+// ── Auto-refresh every 30 seconds ──────────────────────────────────
+
+setInterval(
+  refreshMap,
+  30000
+);
