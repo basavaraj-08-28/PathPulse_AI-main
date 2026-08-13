@@ -55,6 +55,11 @@ window.allPatholesData = allPatholesData;  // Expose for navigation.js
 let alertedPatholes = new Set();
 let isMuted = false;
 
+// Configurable route proximity threshold (20-30 meters range)
+window.ROUTE_PROXIMITY_THRESHOLD_METERS = 25;
+let currentRouteCoordinates = null;
+
+
 
 // ── User Location Marker ────────────────────────────────────────────
 let userLocationMarker = null;
@@ -105,60 +110,91 @@ function showUserLocation(lat, lng, accuracy, centerMap = true, pos = null) {
 }
 
 // ── Locate User ─────────────────────────────────────────────────────
-function locateUser() {
+function locateUser(forceSimulated = false) {
   const btn = document.getElementById('btn-locate');
   if (btn) {
-    btn.innerHTML = '⏳ Locating...';
+    btn.innerHTML = '⏳ Acquiring GPS...';
     btn.disabled = true;
   }
 
   if (!navigator.geolocation) {
-    alert('Geolocation is not supported by your browser.');
+    if (typeof showToast === 'function') showToast('Geolocation is not supported by your browser.', 'error');
+    else alert('Geolocation is not supported by your browser.');
     if (btn) { btn.innerHTML = '📍 My Location'; btn.disabled = false; }
     return;
   }
 
+  // Clear existing watch if active
   if (locationWatchId !== null) {
     navigator.geolocation.clearWatch(locationWatchId);
+    locationWatchId = null;
   }
 
-  let firstLoc = true;
-  let locationResolved = false;
-  
-  // Failsafe timeout in case browser geolocation completely hangs (e.g., HTTP context)
-  setTimeout(() => {
-    if (!locationResolved) {
-      console.log('Geolocation hung. Forcing simulated fallback.');
-      showUserLocation(13.0827, 80.2707, 100, true);
-      if (btn) { btn.innerHTML = '📍 Simulated Location'; btn.disabled = false; }
+  // If user explicitly requests simulated location
+  if (forceSimulated) {
+    showUserLocation(13.0827, 80.2707, 100, true);
+    if (btn) { btn.innerHTML = '📍 Simulated Location'; btn.disabled = false; }
+    if (typeof showToast === 'function') showToast('Using simulated location fallback (13.0827, 80.2707)', 'info');
+    return;
+  }
+
+  // Check for insecure origin (HTTP on non-localhost IP address)
+  const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (!window.isSecureContext && !isLocalhost) {
+    console.warn('Geolocation warning: HTTP connection on external IP address.');
+    if (typeof showToast === 'function') {
+      showToast('⚠️ Mobile browsers require HTTPS or http://localhost for GPS access.', 'warning');
     }
-  }, 2000);
-  
-  // Use getCurrentPosition to ensure we get an immediate fix
-  navigator.geolocation.getCurrentPosition(
+  }
+
+  let locationAcquired = false;
+
+  // Use watchPosition for high-accuracy live GPS tracking
+  locationWatchId = navigator.geolocation.watchPosition(
     (pos) => {
-      locationResolved = true;
-      showUserLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, true, pos);
-      if (btn) { btn.innerHTML = '📍 My Location'; btn.disabled = false; }
-      
-      // Once we have initial location, start watching for changes
-      locationWatchId = navigator.geolocation.watchPosition(
-        (wPos) => {
-          showUserLocation(wPos.coords.latitude, wPos.coords.longitude, wPos.coords.accuracy, false, wPos);
-        },
-        (err) => console.warn('Geolocation watch error:', err.message),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
-      );
+      locationAcquired = true;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const accuracy = pos.coords.accuracy;
+
+      showUserLocation(lat, lng, accuracy, !userLocationMarker, pos);
+
+      if (btn) {
+        btn.innerHTML = '📍 My Location';
+        btn.disabled = false;
+      }
     },
     (err) => {
-      locationResolved = true;
-      console.warn('Geolocation error:', err.message);
-      // Fallback to simulated location for testing purposes
-      console.log('Using simulated location fallback.');
-      showUserLocation(13.0827, 80.2707, 100, true, null);
-      if (btn) { btn.innerHTML = '📍 Simulated Location'; btn.disabled = false; }
+      console.warn('Geolocation error:', err.code, err.message);
+      if (btn) { btn.disabled = false; }
+
+      if (!locationAcquired) {
+        let msg = 'Could not fetch live GPS position.';
+        if (err.code === err.PERMISSION_DENIED) {
+          msg = 'Location permission denied. Please allow location access in browser settings.';
+          if (btn) btn.innerHTML = '📍 GPS Permission Denied';
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          msg = 'GPS signal unavailable. Please turn on device location/GPS.';
+          if (btn) btn.innerHTML = '📍 Retry GPS';
+        } else if (err.code === err.TIMEOUT) {
+          msg = 'GPS fix timed out. Retrying...';
+          if (btn) btn.innerHTML = '📍 Retry GPS';
+        }
+
+        if (typeof showToast === 'function') showToast(msg, 'warning');
+
+        // Fallback to simulated location if no position marker exists yet
+        if (!userLocationMarker) {
+          showUserLocation(13.0827, 80.2707, 100, true);
+          if (btn) btn.innerHTML = '📍 Simulated Location';
+        }
+      }
     },
-    { enableHighAccuracy: false, timeout: 5000, maximumAge: 0 }
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0
+    }
   );
 }
 
@@ -172,21 +208,28 @@ function createPatholeMarker(pathole) {
   const marker = L.circleMarker([pathole.latitude, pathole.longitude], {
     radius: radius,
     fillColor: color,
-    fillOpacity: 0.8,
+    fillOpacity: 0.85,
     color: '#ffffff',
-    weight: 2,
-    opacity: 0.9
+    weight: 2.5,
+    opacity: 0.95
   });
 
-  const date = pathole.created_at ? new Date(pathole.created_at).toLocaleDateString() : 'Unknown';
+  const date = pathole.created_at ? new Date(pathole.created_at).toLocaleString() : 'Unknown';
+
+  let distText = '';
+  if (pathole.distToRoute !== undefined && pathole.distToRoute !== null) {
+    distText = `<div>📏 Distance to Route: <strong>${pathole.distToRoute.toFixed(1)} m</strong></div>`;
+  }
 
   marker.bindPopup(`
     <div class="popup-title">🕳️ Pathole Detected</div>
     <span class="popup-severity ${pathole.severity}">${pathole.severity.toUpperCase()}</span>
     <div class="popup-meta">
-      <div>📍 ${pathole.latitude.toFixed(5)}, ${pathole.longitude.toFixed(5)}</div>
+      <div>📍 Coords: ${pathole.latitude.toFixed(5)}, ${pathole.longitude.toFixed(5)}</div>
+      ${distText}
       <div>📊 Reports: ${pathole.report_count} | Confidence: ${(pathole.confidence * 100).toFixed(0)}%</div>
-      <div>📅 ${date}</div>
+      ${pathole.accel_peak ? `<div>⚡ Peak Accel: ${pathole.accel_peak.toFixed(1)} m/s²</div>` : ''}
+      <div>📅 Date: ${date}</div>
     </div>
   `);
 
@@ -299,44 +342,100 @@ function setupSearch() {
   }
 }
 
-window.selectDestination = function(lat, lon, displayName) {
+// FEATURE 1: Manual Destination Selection on Map Click/Tap
+map.on('click', function(e) {
+  // Prevent click handling if click target is popup or control
+  if (e.originalEvent && (e.originalEvent._stopped || e.originalEvent.defaultPrevented)) return;
+
+  const lat = e.latlng.lat;
+  const lng = e.latlng.lng;
+
+  const defaultTitle = `Selected Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+
+  // Update search box text
+  const searchInput = document.getElementById('map-search');
+  if (searchInput) searchInput.value = defaultTitle;
+
+  // Select destination and automatically calculate route!
+  selectDestination(lat, lng, defaultTitle, true);
+
+  // Asynchronous reverse geocoding to update place name
+  fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data && data.features && data.features.length > 0) {
+        const props = data.features[0].properties;
+        const title = props.name || props.street || props.district || props.city || defaultTitle;
+
+        const destEl = document.getElementById('route-dest-name');
+        if (destEl) destEl.textContent = title;
+        if (searchInput) searchInput.value = title;
+
+        if (destinationMarker) {
+          destinationMarker.setPopupContent(`
+            <div class="popup-title">🎯 Destination</div>
+            <div class="popup-meta" style="margin-bottom:8px; line-height:1.4;">${title}</div>
+            <button class="btn btn-primary btn-sm" onclick="getDirections(${lat}, ${lng})" style="width:100%; padding:8px; margin-top:8px;">
+              🗺️ Recalculate Route
+            </button>
+          `);
+        }
+      }
+    })
+    .catch(err => console.log('Reverse geocode fallback:', err));
+});
+
+window.selectDestination = function(lat, lon, displayName, autoDirections = true) {
   map.setView([lat, lon], 14);
-  
+
   if (destinationMarker) {
     map.removeLayer(destinationMarker);
   }
-  
+
   destinationMarker = L.marker([lat, lon]).addTo(map);
   destinationMarker.bindPopup(`
     <div class="popup-title">🎯 Destination</div>
-    <div class="popup-meta" style="margin-bottom:8px; line-height:1.4;">${displayName}</div>
+    <div class="popup-meta" style="margin-bottom:8px; line-height:1.4;">${displayName || 'Selected Destination'}</div>
     <button class="btn btn-primary btn-sm" onclick="getDirections(${lat}, ${lon})" style="width:100%; padding:8px; margin-top:8px;">
       🗺️ Get Directions
     </button>
-  `).openPopup();
-}
+  `);
+
+  const destNameEl = document.getElementById('route-dest-name');
+  if (destNameEl) destNameEl.textContent = displayName || 'Selected Location';
+
+  if (autoDirections) {
+    getDirections(lat, lon);
+  }
+};
 
 window.routingControl = null;
 
 window.getDirections = function(destLat, destLon) {
   if (!userLocationMarker) {
-    alert("Your current location is unknown. Please wait to be located or check your browser permissions.");
+    console.log('User location unknown when calculating route. Attempting geolocation fix...');
+    locateUser();
+    setTimeout(() => {
+      if (userLocationMarker) getDirections(destLat, destLon);
+      else alert("Your current location is unknown. Please wait to be located or check your browser permissions.");
+    }, 800);
     return;
   }
-  
+
   const userLat = userLocationMarker.getLatLng().lat;
   const userLon = userLocationMarker.getLatLng().lng;
-  
+
   if (destinationMarker) destinationMarker.closePopup();
-  
+
   if (window.routingControl) {
     map.removeControl(window.routingControl);
+    window.routingControl = null;
   }
   if (currentRouteLayer) {
     map.removeLayer(currentRouteLayer);
     currentRouteLayer = null;
   }
-  
+
   window.routingControl = L.Routing.control({
     waypoints: [
       L.latLng(userLat, userLon),
@@ -346,30 +445,62 @@ window.getDirections = function(destLat, destLon) {
     showAlternatives: false,
     fitSelectedRoutes: false,
     lineOptions: {
-      styles: [{ color: '#2563eb', weight: 6, opacity: 0.8 }]
+      styles: [{ color: '#2563eb', weight: 6, opacity: 0.85 }]
     },
-    createMarker: function() { return null; } // Use existing markers
+    createMarker: function() { return null; } // Use existing user & destination markers
   }).addTo(map);
 
   window.routingControl.on('routesfound', function(e) {
     const route = e.routes[0];
+    currentRouteCoordinates = route.coordinates; // Save active route geometry
+
     const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
-    
+    const travelTimeMin = Math.round(route.summary.totalTime / 60);
+    const etaStr = travelTimeMin >= 60 
+      ? Math.floor(travelTimeMin / 60) + 'h ' + (travelTimeMin % 60) + 'm'
+      : travelTimeMin + ' min';
+
     // Manually fit the map to the route with padding and a max zoom limit
     const bounds = L.latLngBounds(route.coordinates);
     map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
-    
+
     const routeInfo = document.getElementById('route-info');
     const routeDistance = document.getElementById('route-distance');
-    
-    if (routeInfo && routeDistance) {
-      routeDistance.textContent = distanceKm;
-      routeInfo.style.display = 'flex';
+    const routeEta = document.getElementById('route-eta');
+    const startNameEl = document.getElementById('route-start-name');
+
+    if (routeDistance) routeDistance.textContent = distanceKm;
+    if (routeEta) routeEta.textContent = etaStr;
+    if (startNameEl) startNameEl.textContent = 'Current GPS Location';
+    if (routeInfo) routeInfo.style.display = 'flex';
+
+    // Hide map click hint when route is displayed
+    const hintEl = document.getElementById('map-click-hint');
+    if (hintEl) hintEl.classList.add('hidden');
+
+    // FEATURE 2: Filter and display ONLY potholes along this route
+    filterMarkers();
+
+    // Toast feedback if available
+    const routePotholes = filterPotholesAlongRoute(currentRouteCoordinates, window.ROUTE_PROXIMITY_THRESHOLD_METERS);
+    if (typeof showToast === 'function') {
+      if (routePotholes.length > 0) {
+        showToast(`⚠️ ${routePotholes.length} pothole(s) detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route!`, 'warning');
+      } else {
+        showToast(`✅ Route clear! No potholes detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route.`, 'success');
+      }
     }
   });
-}
+
+  window.routingControl.on('routingerror', function(e) {
+    console.error('Routing error:', e);
+    alert('Could not calculate a route to the selected destination. Please try another location.');
+  });
+};
 
 window.clearRoute = function() {
+  currentRouteCoordinates = null;
+
   if (window.routingControl) {
     map.removeControl(window.routingControl);
     window.routingControl = null;
@@ -382,26 +513,133 @@ window.clearRoute = function() {
     map.removeLayer(destinationMarker);
     destinationMarker = null;
   }
-  document.getElementById('route-info').style.display = 'none';
-  document.getElementById('map-search').value = '';
+
+  const routeInfo = document.getElementById('route-info');
+  if (routeInfo) routeInfo.style.display = 'none';
+
+  const hintEl = document.getElementById('map-click-hint');
+  if (hintEl) hintEl.classList.remove('hidden');
+
+  const searchInput = document.getElementById('map-search');
+  if (searchInput) searchInput.value = '';
+
+  // Clear pothole markers from map when route is cleared
+  filterMarkers();
+};
+
+// ── Route Proximity & Filtering Logic (Feature 2) ───────────────────
+
+/**
+ * Calculates perpendicular distance in meters from point (pLat, pLng) to line segment (aLat, aLng)-(bLat, bLng).
+ */
+function getDistanceToSegmentMeters(pLat, pLng, aLat, aLng, bLat, bLng) {
+  const midLatRad = ((aLat + bLat) / 2) * (Math.PI / 180);
+  const cosMidLat = Math.cos(midLatRad);
+  const DEG_TO_M_LAT = 111320;
+  const DEG_TO_M_LNG = 111320 * cosMidLat;
+
+  const ax = 0;
+  const ay = 0;
+  const bx = (bLng - aLng) * DEG_TO_M_LNG;
+  const by = (bLat - aLat) * DEG_TO_M_LAT;
+  const px = (pLng - aLng) * DEG_TO_M_LNG;
+  const py = (pLat - aLat) * DEG_TO_M_LAT;
+
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+
+  let t = 0;
+  if (lenSq > 0) {
+    t = (px * dx + py * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+  }
+
+  const projX = ax + t * dx;
+  const projY = ay + t * dy;
+
+  const distSq = (px - projX) * (px - projX) + (py - projY) * (py - projY);
+  return Math.sqrt(distSq);
 }
 
-// ── Added Helper Functions ──────────────────────────────────────────
+/**
+ * Calculates minimum distance in meters from a pothole to the route polyline.
+ */
+function getMinDistanceToRoute(pLat, pLng, routeCoords) {
+  if (!routeCoords || routeCoords.length < 2) return Infinity;
 
-window.filterMarkers = function() {
-  patholeLayer.clearLayers();
+  let minDistance = Infinity;
+  for (let i = 0; i < routeCoords.length - 1; i++) {
+    const p1 = routeCoords[i];
+    const p2 = routeCoords[i + 1];
+
+    const d = getDistanceToSegmentMeters(
+      pLat, pLng,
+      p1.lat, p1.lng,
+      p2.lat, p2.lng
+    );
+
+    if (d < minDistance) {
+      minDistance = d;
+      if (minDistance < 1) break;
+    }
+  }
+
+  return minDistance;
+}
+
+/**
+ * Filters all active stored potholes to return ONLY those within thresholdMeters of routeCoords.
+ */
+function filterPotholesAlongRoute(routeCoords, thresholdMeters) {
+  if (!routeCoords || routeCoords.length === 0) return [];
+
   const showLow = document.getElementById('filter-low')?.checked ?? true;
   const showMed = document.getElementById('filter-medium')?.checked ?? true;
   const showHigh = document.getElementById('filter-high')?.checked ?? true;
 
+  const routePotholes = [];
+
   allPatholesData.forEach(p => {
+    if (!p.is_active) return;
     if (p.severity === 'low' && !showLow) return;
     if (p.severity === 'medium' && !showMed) return;
     if (p.severity === 'high' && !showHigh) return;
 
+    const dist = getMinDistanceToRoute(p.latitude, p.longitude, routeCoords);
+
+    if (dist <= thresholdMeters) {
+      p.distToRoute = dist;
+      routePotholes.push(p);
+    }
+  });
+
+  return routePotholes;
+}
+
+window.filterMarkers = function() {
+  patholeLayer.clearLayers();
+
+  // FEATURE 2: When there is no active route, do NOT display all potholes globally
+  if (!currentRouteCoordinates || currentRouteCoordinates.length === 0) {
+    const countEl = document.getElementById('route-potholes-count');
+    if (countEl) countEl.textContent = '0';
+    return;
+  }
+
+  // Display ONLY potholes located within threshold distance (25m) of the active route
+  const routePotholes = filterPotholesAlongRoute(
+    currentRouteCoordinates,
+    window.ROUTE_PROXIMITY_THRESHOLD_METERS
+  );
+
+  routePotholes.forEach(p => {
     const marker = createPatholeMarker(p);
     patholeLayer.addLayer(marker);
   });
+
+  const countEl = document.getElementById('route-potholes-count');
+  if (countEl) countEl.textContent = routePotholes.length;
 };
 
 window.toggleMute = function() {

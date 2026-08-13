@@ -614,7 +614,7 @@ window.selectAndNavigate = function(lat, lon, name) {
  */
 (function patchSelectDestination() {
   const _original = window.selectDestination;
-  window.selectDestination = function(lat, lon, displayName) {
+  window.selectDestination = function(lat, lon, displayName, autoDirections = true) {
     // Store destination in NAV state
     NAV.destLat  = lat;
     NAV.destLon  = lon;
@@ -623,17 +623,13 @@ window.selectAndNavigate = function(lat, lon, name) {
     // Save to recent destinations
     saveRecent({ lat, lon, name: displayName || 'Destination' });
 
-    // Call original
-    _original(lat, lon, displayName);
+    // Call original selectDestination
+    _original(lat, lon, displayName, autoDirections);
 
     // Auto-start navigation if enabled
     const autoToggle = document.getElementById('auto-nav-toggle');
     if (autoToggle && autoToggle.checked) {
       NAV.pendingAutoStart = true;
-      // Wait for directions to be fetched first
-      setTimeout(() => {
-        window.getDirections(lat, lon);
-      }, 300);
     }
   };
 })();

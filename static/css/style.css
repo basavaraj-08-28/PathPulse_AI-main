@@ -476,25 +476,177 @@ body {
   padding-left: 20px;
 }
 
-.route-info {
+/* ── Map Click Instruction Hint ───────────────────────────────────── */
+.map-click-hint {
   position: absolute;
-  top: 20px;
+  top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--bg-card);
-  backdrop-filter: blur(10px);
-  padding: 12px 24px;
-  border-radius: 30px;
-  box-shadow: var(--shadow-lg);
-  border: 1px solid rgba(5, 150, 105, 0.3);
   z-index: 1000;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  color: #ffffff;
+  padding: 8px 18px;
+  border-radius: 50px;
+  font-size: 0.82rem;
   font-weight: 600;
-  font-size: 0.95rem;
-  display: none;
+  display: flex;
   align-items: center;
   gap: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  animation: pulseHint 3s ease-in-out infinite alternate;
+}
+
+.map-click-hint.hidden {
+  opacity: 0;
+  transform: translate(-50%, -10px);
+  pointer-events: none;
+}
+
+@keyframes pulseHint {
+  0% { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); }
+  100% { box-shadow: 0 4px 25px rgba(5, 150, 105, 0.4); }
+}
+
+.hint-icon {
+  font-size: 0.95rem;
+}
+
+/* ── Enhanced Route Info Card ─────────────────────────────────────── */
+.route-info {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  padding: 14px 20px;
+  border-radius: 18px;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.15);
+  border: 1.5px solid rgba(5, 150, 105, 0.3);
+  z-index: 1000;
+  font-weight: 600;
+  font-size: 0.88rem;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
   color: var(--text-primary);
-  animation: slideDown 0.3s ease;
+  min-width: 320px;
+  max-width: 92vw;
+  animation: slideDown 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.route-info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  padding-bottom: 8px;
+}
+
+.route-badge {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-close-route {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--danger);
+  font-size: 1.1rem;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: var(--transition);
+}
+
+.btn-close-route:hover {
+  background: var(--danger-glow);
+}
+
+.route-details-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.02);
+  padding: 8px 12px;
+  border-radius: var(--radius-xs);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.route-detail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.rd-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.rd-value {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.route-locations {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+}
+
+.loc-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.loc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.loc-dot.start {
+  background: #06d6a0;
+  box-shadow: 0 0 6px rgba(6, 214, 160, 0.6);
+}
+
+.loc-dot.dest {
+  background: #2563eb;
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.6);
+}
+
+.loc-label {
+  font-weight: 700;
+  color: var(--text-muted);
+  width: 75px;
+  flex-shrink: 0;
+}
+
+.loc-text {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
 }
 
 @keyframes slideDown {

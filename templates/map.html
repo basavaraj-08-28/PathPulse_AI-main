@@ -223,12 +223,46 @@
 
     <div class="map-container">
 
-      <!-- ── Route Info Bar (top-center of map) ─────────────────────── -->
+      <!-- ── Map Click Instruction Hint ─────────────────────────────── -->
+      <div id="map-click-hint" class="map-click-hint">
+        <span class="hint-icon">📍</span>
+        <span>Click on the map to select destination</span>
+      </div>
+
+      <!-- ── Route Info Card (top-center of map) ─────────────────────── -->
       <div id="route-info" class="route-info">
-        🛣️ Route: <span id="route-distance" style="font-weight:800; color:var(--accent);">0</span> km
-        &nbsp;
+        <div class="route-info-header">
+          <span class="route-badge">🎯 Destination Selected</span>
+          <button onclick="clearRoute()" class="btn-close-route" title="Clear Route">✖</button>
+        </div>
+        <div class="route-details-grid">
+          <div class="route-detail-item">
+            <span class="rd-label">Distance</span>
+            <span class="rd-value"><span id="route-distance">0</span> km</span>
+          </div>
+          <div class="route-detail-item">
+            <span class="rd-label">Est. Time</span>
+            <span class="rd-value"><span id="route-eta">0 min</span></span>
+          </div>
+          <div class="route-detail-item">
+            <span class="rd-label">Potholes</span>
+            <span class="rd-value"><span id="route-potholes-count">0</span></span>
+          </div>
+        </div>
+        <div class="route-locations">
+          <div class="loc-item">
+            <span class="loc-dot start"></span>
+            <span class="loc-label">Start:</span>
+            <span id="route-start-name" class="loc-text">Current GPS Location</span>
+          </div>
+          <div class="loc-item">
+            <span class="loc-dot dest"></span>
+            <span class="loc-label">Destination:</span>
+            <span id="route-dest-name" class="loc-text">Selected Location</span>
+          </div>
+        </div>
         <!-- Navigation action buttons -->
-        <div class="nav-btn-group">
+        <div class="nav-btn-group" style="margin-top: 4px; justify-content: flex-end;">
           <button class="btn-nav-start" id="btn-start-nav" onclick="startNavigation()" style="display:none;"
             title="Begin live navigation along this route">
             🚗 Start Navigation
@@ -238,9 +272,6 @@
             ✋ Stop Navigation
           </button>
         </div>
-        <button onclick="clearRoute()"
-          style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1.1rem;margin-left:12px;padding:4px;"
-          title="Clear Route">✖</button>
       </div>
 
       <!-- ── Pathole Warning Card (Phase 5) ─────────────────────────── -->
