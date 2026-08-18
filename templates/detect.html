@@ -3,10 +3,11 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PathPulse AI — Detection Ride Mode</title>
-  <meta name="description" content="Start a detection ride to find patholes on the road using your phone's sensors.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>PathPulse AI — Detection & Live Navigation Ride</title>
+  <meta name="description" content="Start a ride with live GPS navigation and real-time sensor pothole detection.">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0f172a">
@@ -22,7 +23,7 @@
       <div class="logo-icon">🛣️</div>
       <div>
         <h1>PathPulse</h1>
-        <span>Detection Mode</span>
+        <span>Ride & Navigation</span>
       </div>
     </a>
     <ul class="nav-links">
@@ -36,7 +37,10 @@
   <!-- ── Detection Layout ────────────────────────────────────────── -->
   <div class="detect-page">
     <div class="detect-container">
+
       <!-- Left Panel -->
+      <div class="detect-panel">
+
         <!-- Offline status banner -->
         <div class="offline-banner" id="offline-banner" style="display: none;">
           ⚠️ Running Offline — reports will be queued locally.
@@ -44,18 +48,47 @@
 
         <!-- Status Card -->
         <div class="panel-card">
-          <h4 style="display:flex; align-items:center;">⚡ Detection Status <button class="mute-btn" id="btn-mute" onclick="toggleMute()" title="Mute/Unmute sound alerts" style="margin-left:auto;">🔊</button></h4>
+          <h4 style="display:flex; align-items:center;">⚡ Ride & Detection Status <button class="mute-btn" id="btn-mute" onclick="toggleMute()" title="Mute/Unmute sound alerts" style="margin-left:auto;">🔊</button></h4>
           <div class="status-indicator idle" id="status-indicator">
             <span class="status-dot"></span>
             <span id="status-text">Ready — Tap Start to begin</span>
           </div>
+          <div style="margin-top: 12px; font-size: 0.8rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+            <span>GPS Status: <strong id="gps-status" style="color:var(--text-primary)">Inactive</strong></span>
+            <span id="gps-accuracy">--</span>
+          </div>
           <div style="margin-top: 16px; display: flex; gap: 10px;">
             <button class="btn btn-primary btn-sm" id="btn-start" onclick="startDetection()" style="flex:1;">
-              ▶ Start
+              ▶ Start Ride
             </button>
             <button class="btn btn-secondary btn-sm" id="btn-stop" onclick="stopDetection()" disabled style="flex:1;">
-              ⏹ Stop
+              ⏹ Stop Ride
             </button>
+          </div>
+        </div>
+
+        <!-- Destination Search Card -->
+        <div class="panel-card">
+          <h4>🎯 Search Destination</h4>
+          <div class="search-container" style="position:relative; width:100%;">
+            <input type="text" id="map-search" placeholder="Search destination for navigation..." autocomplete="off">
+            <div id="search-suggestions" class="search-suggestions"></div>
+            <!-- Recent / Favs dropdowns -->
+            <div id="recent-dest-panel" class="dest-panel">
+              <div class="dest-panel-header">🕐 Recent</div>
+              <div id="recent-dest-list"></div>
+            </div>
+            <div id="fav-dest-panel" class="dest-panel">
+              <div class="dest-panel-header">⭐ Favourites</div>
+              <div id="fav-dest-list"></div>
+            </div>
+          </div>
+          <div style="display:flex; gap:6px; margin-top:8px; align-items:center;">
+            <button class="search-panel-btn btn btn-secondary btn-sm" id="btn-recent" onclick="toggleRecentPanel()" title="Recent Destinations">🕐 Recent</button>
+            <button class="search-panel-btn btn btn-secondary btn-sm" id="btn-favs" onclick="toggleFavPanel()" title="Favourite Destinations">⭐ Favs</button>
+            <label class="auto-nav-toggle-wrap" style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);" title="Auto-start navigation when destination selected">
+              <input type="checkbox" id="auto-nav-toggle"> Auto-Nav
+            </label>
           </div>
         </div>
 
@@ -76,8 +109,7 @@
               <div class="axis-value" id="accel-z">0.0</div>
             </div>
           </div>
-          <div
-            style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">
+          <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">
             <span>Magnitude</span>
             <span id="magnitude-value">0.0 m/s²</span>
           </div>
@@ -90,11 +122,10 @@
         </div>
 
         <!-- Detection Log -->
-        <div class="panel-card" style="flex:1; min-height:0;">
-          <h4>📋 Detection Log <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);"
-              id="log-count">0 detections</span></h4>
+        <div class="panel-card" style="flex:1; min-height:180px;">
+          <h4>📋 Detection Log <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);" id="log-count">0 detections</span></h4>
           <div class="detection-log" id="detection-log">
-            <div style="text-align:center; color:var(--text-muted); padding:30px 0; font-size:0.85rem;">
+            <div style="text-align:center; color:var(--text-muted); padding:20px 0; font-size:0.85rem;">
               No patholes detected yet.<br>Start a ride to begin scanning.
             </div>
           </div>
@@ -102,19 +133,119 @@
 
       </div>
 
-      <!-- Right: Map -->
-      <div id="detect-map"></div>
+      <!-- Right: Map with overlays -->
+      <div class="map-container" style="position:relative; flex:1; height:100%;">
+
+        <!-- Map Click Instruction Hint -->
+        <div id="map-click-hint" class="map-click-hint">
+          <span class="hint-icon">📍</span>
+          <span>Click map to select destination</span>
+        </div>
+
+        <!-- Route Info Card -->
+        <div id="route-info" class="route-info" style="display:none;">
+          <div class="route-info-header">
+            <span class="route-badge">🎯 Destination Selected</span>
+            <button onclick="clearRoute()" class="btn-close-route" title="Clear Route">✖</button>
+          </div>
+          <div class="route-details-grid">
+            <div class="route-detail-item">
+              <span class="rd-label">Distance</span>
+              <span class="rd-value"><span id="route-distance">0</span> km</span>
+            </div>
+            <div class="route-detail-item">
+              <span class="rd-label">Est. Time</span>
+              <span class="rd-value"><span id="route-eta">0 min</span></span>
+            </div>
+            <div class="route-detail-item">
+              <span class="rd-label">Potholes</span>
+              <span class="rd-value"><span id="route-potholes-count">0</span></span>
+            </div>
+          </div>
+          <div class="route-locations">
+            <div class="loc-item">
+              <span class="loc-dot start"></span>
+              <span class="loc-label">Start:</span>
+              <span id="route-start-name" class="loc-text">Current GPS Location</span>
+            </div>
+            <div class="loc-item">
+              <span class="loc-dot dest"></span>
+              <span class="loc-label">Destination:</span>
+              <span id="route-dest-name" class="loc-text">Selected Location</span>
+            </div>
+          </div>
+          <div class="nav-btn-group" style="margin-top: 6px; display:flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn-nav-start btn btn-primary btn-sm" id="btn-start-nav" onclick="startNavigation()" style="display:none;" title="Begin live navigation along this route">
+              🚗 Start Navigation
+            </button>
+            <button class="btn-nav-stop btn btn-secondary btn-sm" id="btn-stop-nav" onclick="stopNavigation()" style="display:none;" title="Stop navigation mode">
+              ✋ Stop Navigation
+            </button>
+          </div>
+        </div>
+
+        <!-- Pathole Warning Card -->
+        <div id="pathole-warning-card" class="pathole-warning-card" style="display:none;">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Live Navigation Dashboard -->
+        <div id="nav-dashboard" class="nav-dashboard" style="display:none;">
+          <div class="nav-dashboard-header">
+            <div class="nav-title">
+              🚗 PathPulse Navigation
+            </div>
+            <span class="nav-status-badge navigating" id="nav-status-badge">
+              <span id="nav-status-text">Navigating</span>
+            </span>
+          </div>
+
+          <div class="nav-stats-row">
+            <div class="nav-stat">
+              <span class="ns-label">Distance</span>
+              <span class="ns-value" id="dash-distance">—</span>
+            </div>
+            <div class="nav-stat">
+              <span class="ns-label">ETA</span>
+              <span class="ns-value" id="dash-eta">—</span>
+            </div>
+            <div class="nav-stat">
+              <span class="ns-label">Speed</span>
+              <span class="ns-value" id="dash-speed">0 km/h</span>
+            </div>
+            <div class="nav-stat">
+              <span class="ns-label">GPS ±</span>
+              <span class="ns-value" id="dash-accuracy">—</span>
+            </div>
+          </div>
+
+          <div class="nav-next-turn-row">
+            <span class="nt-label">Next</span>
+            <span class="nt-value" id="dash-next-turn">⬆️ Follow the route</span>
+          </div>
+        </div>
+
+        <!-- Leaflet Map -->
+        <div id="detect-map" style="height:100%; width:100%;"></div>
+
+      </div>
+
     </div>
   </div>
 
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
   <script src="{{ url_for('static', filename='js/detect.js') }}"></script>
   <script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js')
-    .then(() => console.log("Service Worker Registered"));
-}
-</script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(() => console.log("Service Worker Registered"));
+    }
+  </script>
 </body>
 
 </html>

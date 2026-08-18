@@ -1803,6 +1803,7 @@ body {
   pointer-events: none;
 }
 
+.toast,
 .nav-toast {
   padding: 10px 18px;
   border-radius: 10px;
@@ -1810,44 +1811,50 @@ body {
   font-weight: 600;
   font-family: 'Inter', sans-serif;
   box-shadow: var(--shadow-md);
-  opacity: 0;
-  transform: translateX(30px);
+  opacity: 1;
+  transform: translateX(0);
   transition: opacity 0.3s ease, transform 0.3s ease;
   pointer-events: none;
-  max-width: 280px;
+  max-width: 320px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.nav-toast.toast-visible {
-  opacity: 1;
-  transform: translateX(0);
+.toast.fade-out,
+.nav-toast:not(.toast-visible) {
+  opacity: 0;
+  transform: translateX(30px);
 }
 
+.toast-success,
 .nav-toast-success {
   background: #d1fae5;
   color: #065f46;
   border: 1px solid rgba(5,150,105,0.3);
 }
 
+.toast-warning,
 .nav-toast-warning {
   background: #fef3c7;
   color: #92400e;
   border: 1px solid rgba(245,158,11,0.3);
 }
 
+.toast-info,
 .nav-toast-info {
   background: #dbeafe;
   color: #1e3a8a;
   border: 1px solid rgba(37,99,235,0.2);
 }
 
+.toast-error,
 .nav-toast-error {
   background: #fee2e2;
   color: #7f1d1d;
   border: 1px solid rgba(220,38,38,0.3);
 }
+
 
 /* ── Route Progress Highlight ───────────────────────────────────────── */
 .leaflet-interactive.active-route {

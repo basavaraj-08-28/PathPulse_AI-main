@@ -2314,14 +2314,12 @@ window.filterMarkers =
 
     patholeLayer.clearLayers();
 
-
     /*
-     * IMPORTANT:
-     *
-     * No active route =
-     * no pothole markers.
-     *
-     * This keeps your map clean.
+     * IMPORTANT REQUIREMENT:
+     * Main Map page — HIDE pothole markers completely.
+     * Do NOT display pothole markers, pins, circles, or icons.
+     * Keep pathole data in memory (window.allPatholesData) for route warnings,
+     * statistics, and internal calculations, but keep map clean.
      */
 
     if (
@@ -2334,17 +2332,14 @@ window.filterMarkers =
           'route-potholes-count'
         );
 
-
       if (countEl) {
 
         countEl.textContent =
           '0';
       }
 
-
       return;
     }
-
 
     const routePotholes =
       filterPotholesAlongRoute(
@@ -2352,28 +2347,13 @@ window.filterMarkers =
         window.ROUTE_PROXIMITY_THRESHOLD_METERS
       );
 
-
-    routePotholes.forEach(
-      p => {
-
-        const marker =
-          createPatholeMarker(
-            p
-          );
-
-
-        patholeLayer.addLayer(
-          marker
-        );
-      }
-    );
-
+    // Keep map clean: Do NOT add markers to patholeLayer
+    // patholeLayer remains cleared.
 
     const countEl =
       document.getElementById(
         'route-potholes-count'
       );
-
 
     if (countEl) {
 
@@ -2381,6 +2361,7 @@ window.filterMarkers =
         routePotholes.length;
     }
   };
+
 
 
 // ====================================================================
