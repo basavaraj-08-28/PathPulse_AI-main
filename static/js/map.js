@@ -19,6 +19,17 @@ const map = L.map('main-map', {
 
 window.ppMap = map;
 
+// Auto-adjust Leaflet viewport when screen size or orientation changes
+window.addEventListener('resize', () => {
+  if (map) map.invalidateSize();
+}, { passive: true });
+
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    if (map) map.invalidateSize();
+  }, 200);
+}, { passive: true });
+
 
 // ── Map Layers ──────────────────────────────────────────────────────
 
