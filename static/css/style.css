@@ -1492,24 +1492,24 @@ body.live-nav-active .detect-container {
   gap: 0 !important;
 }
 
-/* ── Top Maneuver Card ──────────────────────────────────────────────── */
+/* ── 1. Top Turn-by-Turn Navigation Instruction Card ─────────────────── */
 .live-nav-top-card {
   position: absolute;
-  top: calc(16px + env(safe-area-inset-top, 0px));
+  top: calc(14px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 32px);
   max-width: 480px;
-  background: linear-gradient(145deg, #059669 0%, #047857 100%);
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
   color: #ffffff;
   border-radius: 20px;
-  box-shadow: 0 12px 36px rgba(4, 120, 87, 0.42), 0 3px 10px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 10px 30px rgba(6, 78, 59, 0.42), 0 3px 10px rgba(0, 0, 0, 0.2);
   z-index: 1200;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   animation: liveNavSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 @keyframes liveNavSlideDown {
@@ -1531,17 +1531,20 @@ body.live-nav-active .detect-container {
 }
 
 .live-nav-icon-box {
-  width: 54px;
-  height: 54px;
-  background: rgba(255, 255, 255, 0.18);
-  border-radius: 16px;
+  width: 52px;
+  height: 52px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2rem;
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: #ffffff;
   flex-shrink: 0;
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  line-height: 1;
 }
 
 .live-nav-instruction-text {
@@ -1552,68 +1555,52 @@ body.live-nav-active .detect-container {
   min-width: 0;
 }
 
-.live-nav-dist {
-  font-size: 1.15rem;
-  font-weight: 800;
-  letter-spacing: 0.3px;
-  color: #a7f3d0;
-  font-family: 'JetBrains Mono', monospace;
-}
-
 .live-nav-road {
-  font-size: 1.05rem;
-  font-weight: 700;
-  line-height: 1.3;
+  font-size: 1.18rem;
+  font-weight: 800;
+  line-height: 1.25;
   color: #ffffff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: -0.2px;
 }
 
 .live-nav-next-step {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 20px;
-  background: rgba(0, 0, 0, 0.18);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 0.85rem;
-  color: #d1fae5;
+  gap: 6px;
+  font-size: 0.92rem;
+  color: #a7f3d0;
+  font-weight: 700;
+  margin-top: 2px;
 }
 
 .next-step-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  opacity: 0.8;
+  font-size: 0.82rem;
+  font-weight: 600;
+  opacity: 0.9;
+  letter-spacing: 0.2px;
 }
 
 .next-step-icon {
-  font-size: 1.05rem;
-  font-weight: bold;
+  font-size: 1.15rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
-.next-step-text {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ── Speedometer Badge (Floating Top-Left) ──────────────────────────── */
+/* ── 2. Floating Speedometer Indicator (Bottom-Left) ────────────────── */
 .live-nav-speed-badge {
   position: absolute;
-  top: calc(105px + env(safe-area-inset-top, 0px));
-  left: 16px;
+  left: 20px;
+  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
   z-index: 1150;
   width: 60px;
   height: 60px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(14px);
-  border: 3px solid #059669;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+  border: 2px solid #e5e7eb;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1622,178 +1609,221 @@ body.live-nav-active .detect-container {
 }
 
 .live-nav-speed-badge .speed-val {
-  font-size: 1.3rem;
+  font-size: 1.35rem;
   font-weight: 900;
   font-family: 'JetBrains Mono', monospace;
-  color: var(--text-primary);
+  color: #111827;
+  letter-spacing: -0.5px;
 }
 
 .live-nav-speed-badge .speed-unit {
   font-size: 0.58rem;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: #6b7280;
   margin-top: 2px;
+  letter-spacing: 0.3px;
 }
 
-/* ── Floating Controls Stack (Right Side) ───────────────────────────── */
+/* ── 3. Floating Right-Side Controls (Compass, Recenter, Speaker, Report) */
 .live-nav-floating-controls {
   position: absolute;
-  right: 16px;
-  top: calc(105px + env(safe-area-inset-top, 0px));
+  right: 20px;
+  bottom: calc(140px + env(safe-area-inset-bottom, 0px));
   z-index: 1150;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  align-items: flex-end;
+  gap: 12px;
 }
 
 .live-nav-fab {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(14px);
-  border: 1px solid var(--border-strong);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.25rem;
+  font-size: 1.3rem;
   cursor: pointer;
-  color: var(--text-primary);
-  transition: var(--transition);
+  color: #1f2937;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .live-nav-fab:hover {
-  transform: scale(1.08);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  transform: scale(1.06);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.2);
 }
 
 .live-nav-fab:active {
-  transform: scale(0.94);
+  transform: scale(0.92);
 }
 
-.live-nav-fab-exit {
-  background: #fee2e2;
-  color: #dc2626;
-  border-color: #fca5a5;
-  font-weight: 900;
+.compass-icon {
+  display: inline-block;
+  transition: transform 0.3s ease;
+  font-size: 1.35rem;
 }
 
-/* ── Bottom Route Summary Card ──────────────────────────────────────── */
+.live-nav-pill-report {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 24px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #1f2937;
+  transition: all 0.2s ease;
+  margin-top: 2px;
+}
+
+.live-nav-pill-report:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  background: #fef3c7;
+}
+
+.live-nav-pill-report:active {
+  transform: scale(0.95);
+}
+
+.report-icon {
+  font-size: 1rem;
+}
+
+/* ── 4. Bottom Route Summary Panel ─────────────────────────────────── */
 .live-nav-bottom-card {
   position: absolute;
-  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  width: calc(100% - 32px);
-  max-width: 480px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(24px);
-  border-radius: 24px;
-  border: 1.5px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 12px 42px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.06);
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  background: #ffffff;
+  border-radius: 28px 28px 0 0;
+  border: none;
+  box-shadow: 0 -8px 36px rgba(0, 0, 0, 0.14), 0 -1px 3px rgba(0, 0, 0, 0.05);
   z-index: 1200;
-  padding: 18px 22px;
+  padding: 18px 24px calc(18px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   animation: liveNavSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (min-width: 768px) {
+  .live-nav-bottom-card {
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 40px);
+    max-width: 480px;
+    bottom: 20px;
+    border-radius: 28px;
+    box-shadow: 0 12px 42px rgba(0, 0, 0, 0.18);
+  }
 }
 
 @keyframes liveNavSlideUp {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(45px);
+    transform: translateY(45px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 768px) {
+  @keyframes liveNavSlideUp {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(45px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
   }
 }
 
 .live-nav-bottom-info {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 2px;
 }
 
 .live-nav-eta-large {
-  font-size: 2.2rem;
+  font-size: 2.3rem;
   font-weight: 900;
   color: #059669;
   font-family: 'Inter', -apple-system, sans-serif;
   letter-spacing: -0.5px;
-  line-height: 1;
+  line-height: 1.1;
 }
 
 .live-nav-submetrics {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--text-secondary);
+  color: #4b5563;
 }
 
 .metric-dot {
-  color: var(--text-muted);
+  color: #9ca3af;
 }
 
 .live-nav-bottom-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  width: 100%;
 }
 
-.btn-live-pause {
-  flex: 1;
+.btn-live-end {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px 18px;
-  border-radius: 14px;
-  font-weight: 700;
-  font-size: 0.95rem;
+  padding: 13px 20px;
+  border-radius: 16px;
+  font-weight: 800;
+  font-size: 1rem;
   cursor: pointer;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
-  transition: var(--transition);
+  border: 1.5px solid #fca5a5;
+  background: #fee2e2;
+  color: #dc2626;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.15);
+  transition: all 0.2s ease;
 }
 
-.btn-live-pause:hover {
-  background: #e5e7eb;
-}
-
-.btn-live-pause.is-paused {
-  background: #fef3c7;
-  color: #92400e;
-  border-color: #fcd34d;
-}
-
-.btn-live-exit {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 12px 20px;
-  border-radius: 14px;
-  font-weight: 700;
-  font-size: 0.95rem;
-  cursor: pointer;
-  border: none;
-  background: linear-gradient(135deg, #dc2626, #b91c1c);
-  color: #ffffff;
-  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.3);
-  transition: var(--transition);
-}
-
-.btn-live-exit:hover {
+.btn-live-end:hover {
+  background: #fecaca;
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.4);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.22);
+}
+
+.btn-live-end:active {
+  transform: scale(0.98);
+}
+
+.end-icon {
+  font-size: 1.1rem;
+  font-weight: 900;
 }
 
 body.live-nav-active .pathole-warning-card {

@@ -286,22 +286,22 @@ function getManeuverIcon(type) {
     'Left': '↰',
     'TurnRight': '↱',
     'Right': '↱',
-    'TurnSlightLeft': '↖️',
-    'SlightLeft': '↖️',
-    'TurnSlightRight': '↗️',
-    'SlightRight': '↗️',
-    'TurnSharpLeft': '⬅️',
-    'SharpLeft': '⬅️',
-    'TurnSharpRight': '➡️',
-    'SharpRight': '➡️',
-    'UTurn': '↩️',
+    'TurnSlightLeft': '↖',
+    'SlightLeft': '↖',
+    'TurnSlightRight': '↗',
+    'SlightRight': '↗',
+    'TurnSharpLeft': '⬅',
+    'SharpLeft': '⬅',
+    'TurnSharpRight': '➡',
+    'SharpRight': '➡',
+    'UTurn': '↩',
     'Roundabout': '🔄',
     'DestinationReached': '🏁',
     'WaypointReached': '📍',
-    'Head': '⬆️',
-    'Straight': '⬆️'
+    'Head': '↑',
+    'Straight': '↑'
   };
-  return iconMap[type] || '⬆️';
+  return iconMap[type] || '↑';
 }
 
 /**
@@ -320,11 +320,15 @@ function _extractRouteData() {
  * Update all Page 2 Live Navigation elements: Top Card, Speed, Bottom Card.
  */
 function updateLiveNavUI(lat, lng, accuracy) {
-  // 1. Update Speedometer
+  // 1. Update Speedometer (Real GPS speed or '--')
   const speedValEl = document.getElementById('live-nav-speed-val');
   if (speedValEl) {
     const spd = parseFloat(NAV.currentSpeed);
-    speedValEl.textContent = (!isNaN(spd) && spd > 0) ? Math.round(spd) : '0';
+    if (!isNaN(spd) && spd > 0) {
+      speedValEl.textContent = Math.round(spd);
+    } else {
+      speedValEl.textContent = '--';
+    }
   }
 
   // 2. Compute remaining distance along route from closest point
@@ -364,69 +368,96 @@ function updateLiveNavUI(lat, lng, accuracy) {
   if (distRemainEl) distRemainEl.textContent = remainDistStr;
   if (arrivalTimeEl) arrivalTimeEl.textContent = arrivalTimeStr;
 
-  // 7. Update Top Maneuver Card
+  // 7. Update Top Maneuver Card ("towards [ROAD NAME]" and "Then [ICON]")
+  const mainIconEl = document.getElementById('live-nav-main-icon');
+  const stepRoadEl = document.getElementById('live-nav-step-road');
+  const nextStepRow = document.getElementById('live-nav-next-step-row');
+  const nextIconEl = document.getElementById('live-nav-next-icon');
+
   if (NAV.routeSteps && NAV.routeSteps.length > 0) {
     const currentStep = NAV.routeSteps[NAV.currentStepIndex];
     if (currentStep) {
-      // Main Maneuver Icon
-      const mainIconEl = document.getElementById('live-nav-main-icon');
       if (mainIconEl) {
         mainIconEl.innerHTML = `<span class="maneuver-icon">${getManeuverIcon(currentStep.type)}</span>`;
       }
 
-      // Distance to upcoming turn
-      const stepCoord = currentStep.waypoint ||
-        (NAV.currentRoute && NAV.currentRoute[currentStep.index]) || null;
-      let distToStep = 0;
-      if (stepCoord) {
-        distToStep = haversineMeters(lat, lng, stepCoord.lat, stepCoord.lng);
-      } else if (currentStep.distance) {
-        distToStep = currentStep.distance;
-      }
-
-      const distStepStr = distToStep >= 1000
-        ? `In ${(distToStep / 1000).toFixed(1)} km`
-        : `In ${Math.round(distToStep)} m`;
-
-      const stepDistEl = document.getElementById('live-nav-step-dist');
-      if (stepDistEl) stepDistEl.textContent = distStepStr;
-
-      // Road Name / Action
-      const stepRoadEl = document.getElementById('live-nav-step-road');
       if (stepRoadEl) {
-        if (currentStep.road) {
-          stepRoadEl.textContent = `Continue towards ${currentStep.road}`;
-        } else if (currentStep.text) {
-          stepRoadEl.textContent = currentStep.text;
+        if (currentStep.road && currentStep.road.trim()) {
+          stepRoadEl.textContent = `towards ${currentStep.road}`;
+        } else if (currentStep.text && currentStep.text.trim()) {
+          stepRoadEl.textContent = currentStep.text.startsWith('towards') ? currentStep.text : `towards ${currentStep.text}`;
         } else {
-          stepRoadEl.textContent = `Follow the route towards ${NAV.destName || 'destination'}`;
+          stepRoadEl.textContent = `towards ${NAV.destName || 'Destination'}`;
         }
       }
 
       // Secondary (Next) maneuver preview
-      const nextStepRow = document.getElementById('live-nav-next-step-row');
-      const nextIconEl = document.getElementById('live-nav-next-icon');
-      const nextTextEl = document.getElementById('live-nav-next-text');
-
       if (NAV.currentStepIndex + 1 < NAV.routeSteps.length) {
         const nextStep = NAV.routeSteps[NAV.currentStepIndex + 1];
         if (nextStepRow) nextStepRow.style.display = 'flex';
         if (nextIconEl) nextIconEl.textContent = getManeuverIcon(nextStep.type);
-        if (nextTextEl) nextTextEl.textContent = nextStep.road ? `${nextStep.text || 'Turn'} on ${nextStep.road}` : (nextStep.text || 'Follow route');
       } else {
         if (nextStepRow) nextStepRow.style.display = 'none';
       }
     }
   } else {
-    // Single / direct route fallback
-    const mainIconEl = document.getElementById('live-nav-main-icon');
-    const stepDistEl = document.getElementById('live-nav-step-dist');
-    const stepRoadEl = document.getElementById('live-nav-step-road');
-    if (mainIconEl) mainIconEl.innerHTML = `<span class="maneuver-icon">⬆️</span>`;
-    if (stepDistEl) stepDistEl.textContent = remainDistStr;
-    if (stepRoadEl) stepRoadEl.textContent = `Follow the route towards ${NAV.destName || 'destination'}`;
+    // Direct route fallback
+    if (mainIconEl) mainIconEl.innerHTML = `<span class="maneuver-icon">↑</span>`;
+    if (stepRoadEl) stepRoadEl.textContent = `towards ${NAV.destName || 'Destination'}`;
+    if (nextStepRow) nextStepRow.style.display = 'none';
   }
 }
+
+/**
+ * Compass update handler
+ */
+function updateCompassHeading(heading) {
+  const compassEl = document.getElementById('live-compass-icon');
+  if (compassEl && heading !== null && heading !== undefined) {
+    compassEl.style.transform = `rotate(${heading}deg)`;
+  }
+}
+
+// Device orientation listener for physical compass needle
+if (window.DeviceOrientationEvent) {
+  window.addEventListener('deviceorientation', function(e) {
+    let heading = null;
+    if (e.webkitCompassHeading) {
+      heading = e.webkitCompassHeading;
+    } else if (e.alpha !== null) {
+      heading = (360 - e.alpha) % 360;
+    }
+    if (heading !== null) {
+      updateCompassHeading(heading);
+    }
+  }, { passive: true });
+}
+
+/**
+ * Quick Report Hazard action for ⚠️ Report button
+ */
+window.quickReportHazard = function() {
+  const lat = NAV.lastLat;
+  const lon = NAV.lastLon;
+  if (!lat || !lon) {
+    showToast('⚠️ Waiting for GPS location to report...', 'warning');
+    return;
+  }
+  showToast('⚠️ Road issue reported at current position!', 'success');
+  if (navigator.onLine) {
+    fetch('/api/patholes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        latitude: lat,
+        longitude: lon,
+        severity: 'Medium',
+        accel_peak: 2.2,
+        source: 'user_report'
+      })
+    }).catch(err => console.log('Offline/local report logged:', err));
+  }
+};
 
 /* ═══════════════════════════════════════════════════════════════════════
    PHASE 3 — Route Deviation & Recalculation
