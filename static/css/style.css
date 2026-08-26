@@ -2296,3 +2296,198 @@ body.live-nav-active .pathole-warning-card {
     font-size: 0.72rem;
   }
 }
+
+/* ── Admin Export Data Section ───────────────────────────────────────── */
+.export-data-card {
+  background: var(--bg-card, #ffffff);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius, 16px);
+  padding: 24px;
+  margin-bottom: 28px;
+  box-shadow: var(--shadow-md, 0 4px 20px rgba(0,0,0,0.06));
+  backdrop-filter: blur(12px);
+  animation: fadeIn 0.4s ease;
+}
+
+.export-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.export-card-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.export-icon-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--accent-light, #d1fae5);
+  border: 1px solid rgba(5, 150, 105, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+
+.export-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.export-desc {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+}
+
+.export-actions-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.export-buttons-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: var(--transition, all 0.2s ease);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.btn-export-csv {
+  background: #ffffff;
+  color: #065f46;
+  border: 1.5px solid #059669;
+}
+
+.btn-export-csv:hover {
+  background: #ecfdf5;
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.22);
+}
+
+.btn-export-excel {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: #ffffff;
+  border: 1.5px solid #047857;
+}
+
+.btn-export-excel:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 16px rgba(4, 120, 87, 0.32);
+}
+
+.btn-export-all {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-export-all:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.export-meta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 24px;
+  background: rgba(5, 150, 105, 0.08);
+  border: 1px solid rgba(5, 150, 105, 0.2);
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.export-meta-badge .meta-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  color: #059669;
+  font-size: 1rem;
+}
+
+.export-status-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  animation: fadeIn 0.2s ease;
+}
+
+.export-status-toast.loading {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+.export-status-toast.success {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #6ee7b7;
+}
+
+.export-status-toast.warning {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.export-status-toast.error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+@media (max-width: 600px) {
+  .export-actions-wrap {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .export-buttons-group {
+    flex-direction: column;
+    width: 100%;
+  }
+  .btn-export, .btn-export-all {
+    width: 100%;
+    justify-content: center;
+  }
+  .export-meta-badge {
+    justify-content: center;
+  }
+}

@@ -3,11 +3,13 @@ PathPulse AI - Pathole Detection & Mapping System
 Backend API built with Flask
 """
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime, timezone
 import os
+import io
+import csv
 
 app = Flask(__name__)
 CORS(app)
@@ -252,6 +254,217 @@ def delete_pathole(pathole_id):
     db.session.delete(pathole)
     db.session.commit()
     return jsonify({'status': 'success', 'message': 'Pathole deleted permanently'})
+
+
+# ─── Data Export Endpoints (Admin Only) ────────────────────────────────────────
+
+def _get_filtered_patholes(status_filter):
+    """Helper to query patholes by status filter ('active', 'resolved', 'all')"""
+    if status_filter == 'active':
+        return Pathole.query.filter_by(is_active=True).order_by(Pathole.id.asc()).all()
+    elif status_filter == 'resolved':
+        return Pathole.query.filter_by(is_active=False).order_by(Pathole.id.asc()).all()
+    return Pathole.query.order_by(Pathole.id.asc()).all()
+
+
+@app.route('/admin/export/csv', methods=['GET'])
+def export_patholes_csv():
+    """Export collected pothole dataset to government-ready CSV format"""
+    if not session.get('admin_logged_in'):
+        return jsonify({'status': 'error', 'message': 'Forbidden: Admin authentication required.'}), 403
+
+    status_filter = request.args.get('status', 'all')
+    patholes = _get_filtered_patholes(status_filter)
+
+    if not patholes:
+        return jsonify({'status': 'error', 'message': 'No pothole data available for export.'}), 404
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Official government-friendly column headers
+    headers = [
+        'Pothole ID',
+        'Latitude',
+        'Longitude',
+        'Severity',
+        'Confidence',
+        'Detection Date',
+        'Detection Time',
+        'Report Count',
+        'Accelerometer Peak (m/s²)',
+        'Verification Status',
+        'Reported By'
+    ]
+    writer.writerow(headers)
+
+    for p in patholes:
+        det_date = p.created_at.strftime('%Y-%m-%d') if p.created_at else 'N/A'
+        det_time = p.created_at.strftime('%H:%M:%S UTC') if p.created_at else 'N/A'
+        status_str = 'Active' if p.is_active else 'Resolved'
+        accel_str = f"{p.accel_peak:.2f}" if p.accel_peak is not None else 'N/A'
+        conf_str = f"{(p.confidence * 100):.1f}%" if p.confidence is not None else 'N/A'
+
+        writer.writerow([
+            p.id,
+            f"{p.latitude:.6f}",
+            f"{p.longitude:.6f}",
+            (p.severity or 'medium').capitalize(),
+            conf_str,
+            det_date,
+            det_time,
+            p.report_count or 1,
+            accel_str,
+            status_str,
+            p.reported_by or 'Anonymous'
+        ])
+
+    today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    filename = f"PathPulse_Pothole_Data_{today_str}.csv"
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate"
+        }
+    )
+
+
+@app.route('/admin/export/excel', methods=['GET'])
+def export_patholes_excel():
+    """Export collected pothole dataset to formatted Excel (.xlsx) file"""
+    if not session.get('admin_logged_in'):
+        return jsonify({'status': 'error', 'message': 'Forbidden: Admin authentication required.'}), 403
+
+    status_filter = request.args.get('status', 'all')
+    patholes = _get_filtered_patholes(status_filter)
+
+    if not patholes:
+        return jsonify({'status': 'error', 'message': 'No pothole data available for export.'}), 404
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return jsonify({'status': 'error', 'message': 'openpyxl library not installed.'}), 500
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pothole Data"
+
+    # Title Banner Row (A1:K1)
+    ws.merge_cells('A1:K1')
+    title_cell = ws['A1']
+    title_cell.value = "PathPulse AI — Smart Pothole Detection & Road Quality Report"
+    title_cell.font = Font(name='Segoe UI', size=14, bold=True, color='FFFFFF')
+    title_cell.fill = PatternFill(start_color='064E3B', end_color='064E3B', fill_type='solid')
+    title_cell.alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 32
+
+    # Column Headers (Row 2)
+    headers = [
+        'Pothole ID',
+        'Latitude',
+        'Longitude',
+        'Severity',
+        'Confidence',
+        'Detection Date',
+        'Detection Time',
+        'Report Count',
+        'Accelerometer Peak (m/s²)',
+        'Verification Status',
+        'Reported By'
+    ]
+    ws.append(headers)
+    ws.row_dimensions[2].height = 26
+
+    header_fill = PatternFill(start_color='059669', end_color='059669', fill_type='solid')
+    header_font = Font(name='Segoe UI', size=11, bold=True, color='FFFFFF')
+    thin_border = Border(
+        left=Side(style='thin', color='E5E7EB'),
+        right=Side(style='thin', color='E5E7EB'),
+        top=Side(style='thin', color='E5E7EB'),
+        bottom=Side(style='thin', color='E5E7EB')
+    )
+
+    for col_idx in range(1, len(headers) + 1):
+        cell = ws.cell(row=2, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    # Data Rows
+    for p in patholes:
+        det_date = p.created_at.strftime('%Y-%m-%d') if p.created_at else 'N/A'
+        det_time = p.created_at.strftime('%H:%M:%S UTC') if p.created_at else 'N/A'
+        status_str = 'Active' if p.is_active else 'Resolved'
+        accel_val = round(p.accel_peak, 2) if p.accel_peak is not None else 'N/A'
+        conf_str = f"{(p.confidence * 100):.1f}%" if p.confidence is not None else 'N/A'
+
+        row = [
+            p.id,
+            float(f"{p.latitude:.6f}"),
+            float(f"{p.longitude:.6f}"),
+            (p.severity or 'medium').capitalize(),
+            conf_str,
+            det_date,
+            det_time,
+            p.report_count or 1,
+            accel_val,
+            status_str,
+            p.reported_by or 'Anonymous'
+        ]
+        ws.append(row)
+
+    # Format Data Rows
+    for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=len(headers)):
+        ws.row_dimensions[row[0].row].height = 20
+        for cell in row:
+            cell.border = thin_border
+            cell.font = Font(name='Segoe UI', size=10)
+            if cell.column in [1, 8]:  # ID, Report Count
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            elif cell.column in [2, 3]:  # Lat, Long
+                cell.number_format = '0.000000'
+                cell.alignment = Alignment(horizontal='right', vertical='center')
+            elif cell.column in [4, 5, 6, 7, 9, 10]:
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            else:
+                cell.alignment = Alignment(horizontal='left', vertical='center')
+
+    # Auto-adjust column widths
+    for col in ws.columns:
+        col_letter = get_column_letter(col[0].column)
+        max_len = 0
+        for cell in col:
+            val_str = str(cell.value or '')
+            if cell.row == 1:
+                continue  # ignore merged title banner for column width
+            max_len = max(max_len, len(val_str))
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 13)
+
+    # Enable filters on headers and freeze panes at row 3
+    ws.auto_filter.ref = f"A2:{get_column_letter(len(headers))}{ws.max_row}"
+    ws.freeze_panes = "A3"
+
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+
+    today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    filename = f"PathPulse_Pothole_Data_{today_str}.xlsx"
+
+    return Response(
+        bio.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate"
+        }
+    )
 
 
 @app.route('/api/stats', methods=['GET'])

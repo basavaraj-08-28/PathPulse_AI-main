@@ -33,6 +33,7 @@
       font-weight: 800;
       background: var(--gradient-1);
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
       margin-bottom: 24px;
     }
@@ -237,6 +238,47 @@
       </div>
     </section>
 
+    <!-- ── Export Data Section ───────────────────────────────────── -->
+    <section class="export-data-card" id="export-data-section">
+      <div class="export-card-content">
+        <div class="export-card-header">
+          <div class="export-icon-badge">📊</div>
+          <div>
+            <h3 class="export-title">Export Pothole Data</h3>
+            <p class="export-desc">
+              Download collected PathPulse pothole detection data for analysis and official government reporting.
+            </p>
+          </div>
+        </div>
+
+        <div class="export-actions-wrap">
+          <div class="export-buttons-group">
+            <button class="btn btn-export btn-export-csv" id="btn-export-csv" onclick="triggerExport('csv')" title="Export filtered records as CSV">
+              <span class="btn-icon">📄</span>
+              <span>Export CSV</span>
+            </button>
+            <button class="btn btn-export btn-export-excel" id="btn-export-excel" onclick="triggerExport('excel')" title="Export filtered records as Excel (.xlsx)">
+              <span class="btn-icon">📊</span>
+              <span>Export Excel</span>
+            </button>
+            <button class="btn btn-export-all" id="btn-export-all-csv" onclick="triggerExport('csv', true)" title="Export entire database without status filter">
+              <span>Export All (CSV)</span>
+            </button>
+            <button class="btn btn-export-all" id="btn-export-all-excel" onclick="triggerExport('excel', true)" title="Export entire database without status filter">
+              <span>Export All (Excel)</span>
+            </button>
+          </div>
+
+          <div class="export-meta-badge">
+            <span class="meta-label">Total Records:</span>
+            <strong class="meta-count" id="export-record-count">0</strong>
+          </div>
+        </div>
+
+        <div id="export-status-toast" class="export-status-toast" style="display: none;"></div>
+      </div>
+    </section>
+
     <!-- Header & controls -->
     <div class="moderation-header">
       <div>
@@ -428,6 +470,7 @@
     async function loadPatholesList() {
       const tbody = document.getElementById('patholes-list');
       const filter = document.querySelector('input[name="mod-filter"]:checked').value;
+      const countEl = document.getElementById('export-record-count');
       
       try {
         const res = await fetch(`/api/patholes?status=${filter}`);
@@ -436,6 +479,7 @@
         tbody.innerHTML = '';
         
         if (!data.patholes || data.patholes.length === 0) {
+          if (countEl) countEl.textContent = '0';
           tbody.innerHTML = `
             <tr>
               <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 40px 0;">
@@ -447,6 +491,7 @@
         }
 
         currentPatholes = data.patholes;
+        if (countEl) countEl.textContent = data.patholes.length;
         
         data.patholes.forEach(p => {
           const date = new Date(p.created_at).toLocaleString();
@@ -481,6 +526,7 @@
         });
       } catch (err) {
         console.error('Error fetching table details:', err);
+        if (countEl) countEl.textContent = '0';
         tbody.innerHTML = `
           <tr>
             <td colspan="8" style="text-align: center; color: var(--danger); padding: 40px 0;">
@@ -584,6 +630,80 @@
         }
       } catch (err) {
         alert("Failed to delete pathole.");
+      }
+    }
+
+    // ── Export Data Handler ──────────────────────────────────────────
+    async function triggerExport(format, exportAll = false) {
+      const filter = exportAll ? 'all' : (document.querySelector('input[name="mod-filter"]:checked')?.value || 'all');
+      const statusToast = document.getElementById('export-status-toast');
+
+      if (statusToast) {
+        statusToast.textContent = '⏳ Preparing export...';
+        statusToast.className = 'export-status-toast loading';
+        statusToast.style.display = 'inline-flex';
+      }
+
+      try {
+        const url = `/admin/export/${format}?status=${filter}`;
+        const res = await fetch(url);
+
+        if (res.status === 403 || res.status === 401) {
+          if (statusToast) {
+            statusToast.textContent = '❌ Unauthorized. Please sign in as Admin.';
+            statusToast.className = 'export-status-toast error';
+          }
+          alert('Unauthorized access. Please login again as Admin.');
+          showLoginView();
+          return;
+        }
+
+        if (res.status === 404 || res.status === 400) {
+          const errData = await res.json().catch(() => ({ message: 'No pothole data available for export.' }));
+          if (statusToast) {
+            statusToast.textContent = `ℹ️ ${errData.message || 'No pothole data available for export.'}`;
+            statusToast.className = 'export-status-toast warning';
+            setTimeout(() => { statusToast.style.display = 'none'; }, 4000);
+          }
+          alert(errData.message || 'No pothole data available for export.');
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(`Export request returned HTTP ${res.status}`);
+        }
+
+        // Get blob data
+        const blob = await res.blob();
+        const disposition = res.headers.get('Content-Disposition');
+        let filename = `PathPulse_Pothole_Data_${new Date().toISOString().slice(0, 10)}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+        if (disposition && disposition.includes('filename=')) {
+          const match = disposition.match(/filename=(.+)/);
+          if (match && match[1]) filename = match[1].replace(/["']/g, '');
+        }
+
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        if (statusToast) {
+          statusToast.textContent = '✅ Export completed.';
+          statusToast.className = 'export-status-toast success';
+          setTimeout(() => { statusToast.style.display = 'none'; }, 3500);
+        }
+      } catch (err) {
+        console.error('Export error:', err);
+        if (statusToast) {
+          statusToast.textContent = '❌ Export failed. Please try again.';
+          statusToast.className = 'export-status-toast error';
+          setTimeout(() => { statusToast.style.display = 'none'; }, 4000);
+        }
+        alert('Failed to generate export file. Please try again.');
       }
     }
 
