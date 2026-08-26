@@ -57,6 +57,10 @@
             <span>GPS Status: <strong id="gps-status" style="color:var(--text-primary)">Inactive</strong></span>
             <span id="gps-accuracy">--</span>
           </div>
+          <div style="margin-top: 6px; font-size: 0.8rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+            <span>Sensor Status: <strong id="sensor-status" style="color:var(--text-primary)">Inactive</strong></span>
+            <span id="sensor-rate">--</span>
+          </div>
           <div style="margin-top: 16px; display: flex; gap: 10px;">
             <button class="btn btn-primary btn-sm" id="btn-start" onclick="startDetection()" style="flex:1;">
               ▶ Start Ride
@@ -94,24 +98,27 @@
 
         <!-- Accelerometer Card -->
         <div class="panel-card">
-          <h4>📊 Accelerometer Data</h4>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4 style="margin:0;">📊 Accelerometer Data</h4>
+            <span id="sensor-badge" style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">Sensor: Inactive</span>
+          </div>
           <div class="accel-display">
             <div class="accel-axis x">
               <div class="axis-label">X</div>
-              <div class="axis-value" id="accel-x">0.0</div>
+              <div class="axis-value" id="accel-x">0.00</div>
             </div>
             <div class="accel-axis y">
               <div class="axis-label">Y</div>
-              <div class="axis-value" id="accel-y">0.0</div>
+              <div class="axis-value" id="accel-y">0.00</div>
             </div>
             <div class="accel-axis z">
               <div class="axis-label">Z</div>
-              <div class="axis-value" id="accel-z">0.0</div>
+              <div class="axis-value" id="accel-z">0.00</div>
             </div>
           </div>
           <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">
             <span>Magnitude</span>
-            <span id="magnitude-value">0.0 m/s²</span>
+            <span id="magnitude-value">0.00 m/s²</span>
           </div>
           <div class="magnitude-bar">
             <div class="magnitude-fill" id="magnitude-fill"></div>
@@ -189,39 +196,62 @@
           <!-- Populated dynamically -->
         </div>
 
-        <!-- Live Navigation Dashboard -->
-        <div id="nav-dashboard" class="nav-dashboard" style="display:none;">
-          <div class="nav-dashboard-header">
-            <div class="nav-title">
-              🚗 PathPulse Navigation
+        <!-- ── PAGE 2: DEDICATED LIVE NAVIGATION UI ─────────────────── -->
+        <!-- 1. Top Maneuver Instruction Card -->
+        <div id="live-nav-top-card" class="live-nav-top-card" style="display:none;">
+          <div class="live-nav-top-main">
+            <div class="live-nav-icon-box" id="live-nav-main-icon">
+              <span class="maneuver-icon">⬆️</span>
             </div>
-            <span class="nav-status-badge navigating" id="nav-status-badge">
-              <span id="nav-status-text">Navigating</span>
-            </span>
-          </div>
-
-          <div class="nav-stats-row">
-            <div class="nav-stat">
-              <span class="ns-label">Distance</span>
-              <span class="ns-value" id="dash-distance">—</span>
-            </div>
-            <div class="nav-stat">
-              <span class="ns-label">ETA</span>
-              <span class="ns-value" id="dash-eta">—</span>
-            </div>
-            <div class="nav-stat">
-              <span class="ns-label">Speed</span>
-              <span class="ns-value" id="dash-speed">0 km/h</span>
-            </div>
-            <div class="nav-stat">
-              <span class="ns-label">GPS ±</span>
-              <span class="ns-value" id="dash-accuracy">—</span>
+            <div class="live-nav-instruction-text">
+              <div class="live-nav-dist" id="live-nav-step-dist">Calculating…</div>
+              <div class="live-nav-road" id="live-nav-step-road">Follow the highlighted route</div>
             </div>
           </div>
+          <div class="live-nav-next-step" id="live-nav-next-step-row" style="display:none;">
+            <span class="next-step-label">Then</span>
+            <span class="next-step-icon" id="live-nav-next-icon">↰</span>
+            <span class="next-step-text" id="live-nav-next-text">Next maneuver</span>
+          </div>
+        </div>
 
-          <div class="nav-next-turn-row">
-            <span class="nt-label">Next</span>
-            <span class="nt-value" id="dash-next-turn">⬆️ Follow the route</span>
+        <!-- 2. Floating Speedometer Badge -->
+        <div id="live-nav-speed-badge" class="live-nav-speed-badge" style="display:none;">
+          <span class="speed-val" id="live-nav-speed-val">0</span>
+          <span class="speed-unit">km/h</span>
+        </div>
+
+        <!-- 3. Floating Map Controls (Recenter, Voice, Exit) -->
+        <div id="live-nav-floating-controls" class="live-nav-floating-controls" style="display:none;">
+          <button class="live-nav-fab" id="btn-live-recenter" onclick="recenterLiveNav()" title="Recenter on current location">
+            <span>📍</span>
+          </button>
+          <button class="live-nav-fab" id="btn-live-voice" onclick="toggleMute()" title="Mute/Unmute Voice Guidance">
+            <span id="live-voice-icon">🔊</span>
+          </button>
+          <button class="live-nav-fab live-nav-fab-exit" id="btn-live-exit-fab" onclick="stopNavigation()" title="Exit Navigation">
+            <span>✕</span>
+          </button>
+        </div>
+
+        <!-- 4. Bottom Route Summary Card -->
+        <div id="live-nav-bottom-card" class="live-nav-bottom-card" style="display:none;">
+          <div class="live-nav-bottom-info">
+            <div class="live-nav-eta-large" id="live-nav-eta-large">0 min</div>
+            <div class="live-nav-submetrics">
+              <span id="live-nav-dist-remain">0.0 km</span>
+              <span class="metric-dot">•</span>
+              <span id="live-nav-arrival-time">--:--</span>
+            </div>
+          </div>
+          <div class="live-nav-bottom-actions">
+            <button class="btn-live-pause" id="btn-live-pause" onclick="togglePauseNavigation()">
+              <span id="live-pause-icon">⏸</span>
+              <span id="live-pause-text">Pause Navigation</span>
+            </button>
+            <button class="btn-live-exit" id="btn-live-exit" onclick="stopNavigation()" title="Exit Navigation">
+              <span>✕ End</span>
+            </button>
           </div>
         </div>
 

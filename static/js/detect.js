@@ -43,6 +43,10 @@ const accelHistory = [];
 const HISTORY_SIZE = 5;
 let accelHandler = null;
 let accelChart = null;
+let sensorActive = false;
+let sensorWatchdogTimer = null;
+let lastLogTimestamp = 0;
+let isSensorSupported = true;
 
 // Navigation State
 const NAV = {
@@ -96,6 +100,12 @@ const map = L.map("detect-map", {
     zoomControl: true,
     attributionControl: true
 }).setView([12.971599, 77.594566], 15);
+
+map.on('dragstart', () => {
+    if (NAV.isNavigating) {
+        NAV.isFollowing = false;
+    }
+});
 
 L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
@@ -368,10 +378,15 @@ function onPositionUpdate(position) {
     if (NAV.isNavigating) {
         const heading = position.coords.heading || 0;
         updateNavMarker(lat, lng, heading);
-        updateDashboard(lat, lng, accuracy ? accuracy.toFixed(0) : '—');
-        checkRouteDeviation(lat, lng);
-        checkNextTurnInstruction(lat, lng);
-        checkPatholeProximityNav(lat, lng);
+        if (NAV.isFollowing && !NAV.isPaused) {
+            map.setView([lat, lng], clamp(map.getZoom(), 16, 18), { animate: true });
+        }
+        updateLiveNavUI(lat, lng, accuracy ? accuracy.toFixed(0) : '—');
+        if (!NAV.isPaused) {
+            checkRouteDeviation(lat, lng);
+            checkNextTurnInstruction(lat, lng);
+            checkPatholeProximityNav(lat, lng);
+        }
     }
 }
 
@@ -412,57 +427,156 @@ function addRouteCoordinate(lat, lng) {
 // ACCELEROMETER SENSOR & POTHOLE DETECTION ALGORITHM
 // ═══════════════════════════════════════════════════════════════════
 
-function startAccelerometer() {
-    if (!window.DeviceMotionEvent) {
-        console.warn("DeviceMotionEvent is not supported.");
-        updateStatus("warning", "⚠️ Accelerometer unavailable");
-        return;
+function updateSensorStatus(state, message) {
+    const sensorStatusEl = document.getElementById("sensor-status");
+    const sensorBadgeEl = document.getElementById("sensor-badge");
+    const fullBadge = `Sensor: ${message}`;
+
+    if (sensorStatusEl) {
+        sensorStatusEl.textContent = message;
+        if (state === "active" || state === "success") sensorStatusEl.style.color = "#059669";
+        else if (state === "error" || state === "denied") sensorStatusEl.style.color = "#dc2626";
+        else if (state === "warning" || state === "nodata" || state === "unsupported") sensorStatusEl.style.color = "#d97706";
+        else sensorStatusEl.style.color = "var(--text-primary)";
+    }
+    if (sensorBadgeEl) {
+        sensorBadgeEl.textContent = fullBadge;
+        if (state === "active" || state === "success") sensorBadgeEl.style.color = "#059669";
+        else if (state === "error" || state === "denied") sensorBadgeEl.style.color = "#dc2626";
+        else if (state === "warning" || state === "nodata" || state === "unsupported") sensorBadgeEl.style.color = "#d97706";
+        else sensorBadgeEl.style.color = "var(--text-muted)";
+    }
+}
+
+async function startAccelerometer() {
+    if (typeof window === "undefined" || (!("DeviceMotionEvent" in window) && !window.DeviceMotionEvent)) {
+        console.warn("[PathPulse] DeviceMotionEvent is not supported on this device/browser.");
+        isSensorSupported = false;
+        updateSensorStatus("unsupported", "Not Supported");
+        return false;
     }
 
-    if (typeof DeviceMotionEvent.requestPermission === "function") {
-        DeviceMotionEvent.requestPermission()
-            .then((state) => {
-                if (state === "granted") attachAccelListener();
-                else alert("Accelerometer permission denied.");
-            })
-            .catch(err => console.error("Accelerometer permission error:", err));
+    isSensorSupported = true;
+
+    // Handle iOS / Permission-based DeviceMotionEvent
+    if (
+        typeof DeviceMotionEvent !== "undefined" &&
+        typeof DeviceMotionEvent.requestPermission === "function"
+    ) {
+        try {
+            const permission = await DeviceMotionEvent.requestPermission();
+            if (permission === "granted") {
+                console.log("[PathPulse] Motion permission: granted");
+                attachAccelListener();
+                return true;
+            } else {
+                console.warn("[PathPulse] Motion permission: denied");
+                updateSensorStatus("denied", "Permission Denied");
+                showToast("❌ Accelerometer permission denied.", "danger");
+                return false;
+            }
+        } catch (err) {
+            console.error("[PathPulse] Accelerometer permission error:", err);
+            updateSensorStatus("error", "Permission Denied");
+            showToast("❌ Accelerometer permission error: " + (err.message || err), "danger");
+            return false;
+        }
     } else {
+        console.log("[PathPulse] Motion permission: granted");
         attachAccelListener();
+        return true;
     }
 }
 
 function attachAccelListener() {
-    if (accelHandler) return;
+    // Check whether listener is already active, remove old listener to prevent duplicates
+    if (accelHandler) {
+        window.removeEventListener("devicemotion", accelHandler, true);
+        window.removeEventListener("devicemotion", accelHandler, false);
+        accelHandler = null;
+    }
+
+    sensorActive = false;
+    if (sensorWatchdogTimer) clearTimeout(sensorWatchdogTimer);
+    // Watchdog: If no sensor events are received within 3 seconds, show "No Data"
+    sensorWatchdogTimer = setTimeout(() => {
+        if (isDetecting && !sensorActive) {
+            updateSensorStatus("nodata", "No Data");
+            console.warn("[PathPulse] Sensor: No Data received within timeout. Ensure motion sensors are active.");
+        }
+    }, 3000);
+
     accelHandler = (event) => {
         if (!isDetecting) return;
-        const acc = event.accelerationIncludingGravity || event.acceleration;
-        if (acc && Number.isFinite(acc.x) && Number.isFinite(acc.y) && Number.isFinite(acc.z)) {
-            processAccelData(acc.x, acc.y, acc.z);
+
+        let acc = null;
+        let isLinear = false;
+
+        const accGrav = event.accelerationIncludingGravity;
+        const accLin = event.acceleration;
+
+        // Verify that acceleration values are valid numbers (not null/undefined/NaN)
+        if (accGrav && accGrav.x !== null && accGrav.y !== null && accGrav.z !== null && !isNaN(Number(accGrav.x))) {
+            acc = accGrav;
+            isLinear = false;
+        } else if (accLin && accLin.x !== null && accLin.y !== null && accLin.z !== null && !isNaN(Number(accLin.x))) {
+            acc = accLin;
+            isLinear = true;
         }
+
+        if (!acc) return;
+
+        const x = Number(acc.x) || 0;
+        const y = Number(acc.y) || 0;
+        const z = Number(acc.z) || 0;
+
+        if (!sensorActive) {
+            sensorActive = true;
+            if (sensorWatchdogTimer) {
+                clearTimeout(sensorWatchdogTimer);
+                sensorWatchdogTimer = null;
+            }
+            updateSensorStatus("active", "Active");
+            console.log("[PathPulse] Sensor: Active — sensor data flowing");
+        }
+
+        processAccelData(x, y, z, isLinear);
     };
-    window.addEventListener("devicemotion", accelHandler, { passive: true });
+
+    window.addEventListener("devicemotion", accelHandler, true);
+    console.log("[PathPulse] DeviceMotion listener started");
 }
 
 function stopAccelerometer() {
+    if (sensorWatchdogTimer) {
+        clearTimeout(sensorWatchdogTimer);
+        sensorWatchdogTimer = null;
+    }
     if (accelHandler) {
-        window.removeEventListener("devicemotion", accelHandler);
+        window.removeEventListener("devicemotion", accelHandler, true);
+        window.removeEventListener("devicemotion", accelHandler, false);
         accelHandler = null;
     }
+    sensorActive = false;
+    updateSensorStatus("idle", "Inactive");
+    console.log("[PathPulse] DeviceMotion listener stopped");
 }
 
-function processAccelData(x, y, z) {
+function processAccelData(x, y, z, isLinear = false) {
     const accelX = document.getElementById("accel-x");
     const accelY = document.getElementById("accel-y");
     const accelZ = document.getElementById("accel-z");
-    if (accelX) accelX.textContent = x.toFixed(1);
-    if (accelY) accelY.textContent = y.toFixed(1);
-    if (accelZ) accelZ.textContent = z.toFixed(1);
+    if (accelX) accelX.textContent = x.toFixed(2);
+    if (accelY) accelY.textContent = y.toFixed(2);
+    if (accelZ) accelZ.textContent = z.toFixed(2);
 
     const magnitude = Math.sqrt(x * x + y * y + z * z);
-    const deviation = Math.abs(magnitude - GRAVITY);
+    // If linear acceleration (without gravity), deviation is magnitude directly.
+    // If including gravity, deviation is absolute difference from baseline 1g (GRAVITY = 9.81).
+    const deviation = isLinear ? magnitude : Math.abs(magnitude - GRAVITY);
 
     const magnitudeValue = document.getElementById("magnitude-value");
-    if (magnitudeValue) magnitudeValue.textContent = deviation.toFixed(1) + " m/s²";
+    if (magnitudeValue) magnitudeValue.textContent = deviation.toFixed(2) + " m/s²";
 
     const barPercent = Math.min(100, (deviation / 40) * 100);
     const fill = document.getElementById("magnitude-fill");
@@ -482,7 +596,13 @@ function processAccelData(x, y, z) {
         accelChart.update("none");
     }
 
+    // Throttled console debugging (once every ~1000ms)
     const now = Date.now();
+    if (now - lastLogTimestamp >= 1000) {
+        lastLogTimestamp = now;
+        console.log(`[PathPulse] DeviceMotion:\nX: ${x.toFixed(2)}\nY: ${y.toFixed(2)}\nZ: ${z.toFixed(2)}\nMagnitude: ${magnitude.toFixed(2)}`);
+    }
+
     if (deviation > PATHOLE_THRESHOLD && now - lastReportTime > REPORT_COOLDOWN) {
         lastReportTime = now;
         onPatholeDetected(deviation);
@@ -834,6 +954,30 @@ function removeNavMarker() {
     }
 }
 
+function getManeuverIcon(type) {
+    const iconMap = {
+        'TurnLeft': '↰',
+        'Left': '↰',
+        'TurnRight': '↱',
+        'Right': '↱',
+        'TurnSlightLeft': '↖️',
+        'SlightLeft': '↖️',
+        'TurnSlightRight': '↗️',
+        'SlightRight': '↗️',
+        'TurnSharpLeft': '⬅️',
+        'SharpLeft': '⬅️',
+        'TurnSharpRight': '➡️',
+        'SharpRight': '➡️',
+        'UTurn': '↩️',
+        'Roundabout': '🔄',
+        'DestinationReached': '🏁',
+        'WaypointReached': '📍',
+        'Head': '⬆️',
+        'Straight': '⬆️'
+    };
+    return iconMap[type] || '⬆️';
+}
+
 window.startNavigation = function(destLat, destLon, destName) {
     if (!destLat || !destLon) {
         destLat = NAV.destLat;
@@ -846,6 +990,8 @@ window.startNavigation = function(destLat, destLon, destName) {
     }
 
     NAV.isNavigating = true;
+    NAV.isPaused = false;
+    NAV.isFollowing = true;
     NAV.destLat = destLat;
     NAV.destLon = destLon;
     NAV.destName = destName || 'Destination';
@@ -858,81 +1004,223 @@ window.startNavigation = function(destLat, destLon, destName) {
         startDetection();
     }
 
-    const navDash = document.getElementById('nav-dashboard');
-    const btnStartNav = document.getElementById('btn-start-nav');
-    const btnStopNav = document.getElementById('btn-stop-nav');
-    const navStatusText = document.getElementById('nav-status-text');
-    const navStatusBadge = document.getElementById('nav-status-badge');
+    // 1. Activate Full-Screen Page 2 Live Navigation layout
+    document.body.classList.add('live-nav-active');
 
-    if (navDash) navDash.style.display = 'flex';
-    if (btnStartNav) btnStartNav.style.display = 'none';
-    if (btnStopNav) btnStopNav.style.display = 'inline-flex';
-    if (navStatusText) navStatusText.textContent = 'Navigating';
-    if (navStatusBadge) navStatusBadge.className = 'nav-status-badge navigating';
+    // 2. Show dedicated Live Navigation UI components
+    const topCard = document.getElementById('live-nav-top-card');
+    const speedBadge = document.getElementById('live-nav-speed-badge');
+    const floatControls = document.getElementById('live-nav-floating-controls');
+    const bottomCard = document.getElementById('live-nav-bottom-card');
 
-    if (currentPosition) {
-        map.setView([currentPosition.lat, currentPosition.lng], 17, { animate: true });
+    if (topCard) topCard.style.display = 'flex';
+    if (speedBadge) speedBadge.style.display = 'flex';
+    if (floatControls) floatControls.style.display = 'flex';
+    if (bottomCard) bottomCard.style.display = 'flex';
+
+    // 3. Reset Pause button UI
+    const pauseBtn = document.getElementById('btn-live-pause');
+    if (pauseBtn) {
+        pauseBtn.classList.remove('is-paused');
+        const pIcon = document.getElementById('live-pause-icon');
+        const pText = document.getElementById('live-pause-text');
+        if (pIcon) pIcon.textContent = '⏸';
+        if (pText) pText.textContent = 'Pause Navigation';
     }
 
+    // 4. Invalidate Leaflet map size so it smoothly fills full viewport
+    setTimeout(() => {
+        map.invalidateSize();
+        if (currentPosition) {
+            map.setView([currentPosition.lat, currentPosition.lng], 17, { animate: true });
+        }
+    }, 100);
+
+    // 5. Initial voice guidance and toast
     speakNav('Navigation started. Follow the route.');
     showToast('🚗 Live Navigation started! Pothole detection active.', 'success');
+
+    // 6. Immediately populate UI with initial state
+    if (currentPosition) {
+        updateLiveNavUI(currentPosition.lat, currentPosition.lng, currentPosition.accuracy);
+    }
 };
 
 window.stopNavigation = function() {
     NAV.isNavigating = false;
+    NAV.isPaused = false;
+    NAV.isFollowing = true;
+
     removeNavMarker();
 
-    const navDash = document.getElementById('nav-dashboard');
-    const btnStartNav = document.getElementById('btn-start-nav');
-    const btnStopNav = document.getElementById('btn-stop-nav');
+    // 1. Deactivate Full-Screen Page 2 layout, returning to Page 1 Route Preview
+    document.body.classList.remove('live-nav-active');
 
-    if (navDash) navDash.style.display = 'none';
-    if (btnStartNav) btnStartNav.style.display = 'inline-flex';
-    if (btnStopNav) btnStopNav.style.display = 'none';
+    // 2. Hide Live Navigation components
+    const topCard = document.getElementById('live-nav-top-card');
+    const speedBadge = document.getElementById('live-nav-speed-badge');
+    const floatControls = document.getElementById('live-nav-floating-controls');
+    const bottomCard = document.getElementById('live-nav-bottom-card');
 
+    if (topCard) topCard.style.display = 'none';
+    if (speedBadge) speedBadge.style.display = 'none';
+    if (floatControls) floatControls.style.display = 'none';
+    if (bottomCard) bottomCard.style.display = 'none';
     hidePatholeWarning();
+
+    // 3. Restore Start Navigation button in Route Info card
+    const btnStartNav = document.getElementById('btn-start-nav');
+    if (btnStartNav) btnStartNav.style.display = 'inline-flex';
+
+    // 4. Adapt Leaflet map back to normal preview container
+    setTimeout(() => {
+        map.invalidateSize();
+        if (NAV.currentRoute && NAV.currentRoute.length > 0) {
+            map.fitBounds(L.latLngBounds(NAV.currentRoute), { padding: [50, 50], maxZoom: 16 });
+        }
+    }, 100);
+
     speakNav('Navigation stopped.');
-    showToast('Navigation stopped.', 'info');
+    showToast('🏁 Navigation ended. Returned to route preview.', 'info');
 };
 
-function updateDashboard(lat, lng, accuracy) {
-    let remainDist = '—';
-    let etaStr = '—';
-    let nextTurn = '—';
+window.togglePauseNavigation = function() {
+    if (!NAV.isNavigating) return;
 
+    NAV.isPaused = !NAV.isPaused;
+    const pauseBtn = document.getElementById('btn-live-pause');
+    const pIcon = document.getElementById('live-pause-icon');
+    const pText = document.getElementById('live-pause-text');
+
+    if (NAV.isPaused) {
+        if (pauseBtn) pauseBtn.classList.add('is-paused');
+        if (pIcon) pIcon.textContent = '▶';
+        if (pText) pText.textContent = 'Resume Navigation';
+        _speechQueue = [];
+        showToast('⏸ Navigation paused', 'warning');
+    } else {
+        if (pauseBtn) pauseBtn.classList.remove('is-paused');
+        if (pIcon) pIcon.textContent = '⏸';
+        if (pText) pText.textContent = 'Pause Navigation';
+        showToast('▶ Navigation resumed', 'success');
+    }
+};
+
+window.recenterLiveNav = function() {
+    NAV.isFollowing = true;
+    if (currentPosition) {
+        map.setView([currentPosition.lat, currentPosition.lng], 17, { animate: true });
+        showToast('📍 Following your location', 'info');
+    }
+};
+
+function updateLiveNavUI(lat, lng, accuracy) {
+    // 1. Update Speedometer
+    const speedValEl = document.getElementById('live-nav-speed-val');
+    if (speedValEl) {
+        const spd = parseFloat(NAV.currentSpeed);
+        speedValEl.textContent = (!isNaN(spd) && spd > 0) ? Math.round(spd) : '0';
+    }
+
+    // 2. Compute remaining distance along route from closest point
+    let remainingMeters = 0;
     if (NAV.currentRoute && NAV.currentRoute.length > 0) {
         const { idx } = closestPointOnRoute(lat, lng);
-        const remaining = routeLengthFrom(idx);
-        remainDist = remaining >= 1000
-            ? (remaining / 1000).toFixed(1) + ' km'
-            : Math.round(remaining) + ' m';
+        remainingMeters = routeLengthFrom(idx);
+    }
 
-        const speedKmh = parseFloat(NAV.currentSpeed) || 40;
-        const etaMins = Math.round((remaining / 1000) / speedKmh * 60);
-        if (etaMins < 60) {
-            etaStr = etaMins + ' min';
-        } else {
-            etaStr = Math.floor(etaMins / 60) + 'h ' + (etaMins % 60) + 'm';
+    // 3. Format Remaining Distance
+    const remainDistStr = remainingMeters >= 1000
+        ? (remainingMeters / 1000).toFixed(1) + ' km'
+        : Math.round(remainingMeters) + ' m';
+
+    // 4. Format ETA (minutes and hours)
+    const currentSpeedNum = parseFloat(NAV.currentSpeed);
+    const speedKmh = (currentSpeedNum > 5) ? currentSpeedNum : 35; // default urban speed
+    const etaMins = Math.max(1, Math.round((remainingMeters / 1000) / speedKmh * 60));
+    const etaStr = etaMins >= 60
+        ? Math.floor(etaMins / 60) + 'h ' + (etaMins % 60) + 'm'
+        : etaMins + ' min';
+
+    // 5. Format Estimated Arrival Clock Time (e.g. "12:48 pm")
+    const arrivalDate = new Date(Date.now() + etaMins * 60 * 1000);
+    let hours = arrivalDate.getHours();
+    const minutes = arrivalDate.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    hours = hours % 12 || 12;
+    const arrivalTimeStr = `${hours}:${minutes} ${ampm}`;
+
+    // 6. Update Bottom Summary Card
+    const etaLargeEl = document.getElementById('live-nav-eta-large');
+    const distRemainEl = document.getElementById('live-nav-dist-remain');
+    const arrivalTimeEl = document.getElementById('live-nav-arrival-time');
+
+    if (etaLargeEl) etaLargeEl.textContent = etaStr;
+    if (distRemainEl) distRemainEl.textContent = remainDistStr;
+    if (arrivalTimeEl) arrivalTimeEl.textContent = arrivalTimeStr;
+
+    // 7. Update Top Maneuver Card
+    if (NAV.routeSteps && NAV.routeSteps.length > 0) {
+        const currentStep = NAV.routeSteps[NAV.currentStepIndex];
+        if (currentStep) {
+            // Main Maneuver Icon
+            const mainIconEl = document.getElementById('live-nav-main-icon');
+            if (mainIconEl) {
+                mainIconEl.innerHTML = `<span class="maneuver-icon">${getManeuverIcon(currentStep.type)}</span>`;
+            }
+
+            // Distance to upcoming turn
+            const stepCoord = currentStep.waypoint ||
+                (NAV.currentRoute && NAV.currentRoute[currentStep.index]) || null;
+            let distToStep = 0;
+            if (stepCoord) {
+                distToStep = haversineMeters(lat, lng, stepCoord.lat, stepCoord.lng);
+            } else if (currentStep.distance) {
+                distToStep = currentStep.distance;
+            }
+
+            const distStepStr = distToStep >= 1000
+                ? `In ${(distToStep / 1000).toFixed(1)} km`
+                : `In ${Math.round(distToStep)} m`;
+
+            const stepDistEl = document.getElementById('live-nav-step-dist');
+            if (stepDistEl) stepDistEl.textContent = distStepStr;
+
+            // Road Name / Action
+            const stepRoadEl = document.getElementById('live-nav-step-road');
+            if (stepRoadEl) {
+                if (currentStep.road) {
+                    stepRoadEl.textContent = `Continue towards ${currentStep.road}`;
+                } else if (currentStep.text) {
+                    stepRoadEl.textContent = currentStep.text;
+                } else {
+                    stepRoadEl.textContent = `Follow the route towards ${NAV.destName || 'destination'}`;
+                }
+            }
+
+            // Secondary (Next) maneuver preview
+            const nextStepRow = document.getElementById('live-nav-next-step-row');
+            const nextIconEl = document.getElementById('live-nav-next-icon');
+            const nextTextEl = document.getElementById('live-nav-next-text');
+
+            if (NAV.currentStepIndex + 1 < NAV.routeSteps.length) {
+                const nextStep = NAV.routeSteps[NAV.currentStepIndex + 1];
+                if (nextStepRow) nextStepRow.style.display = 'flex';
+                if (nextIconEl) nextIconEl.textContent = getManeuverIcon(nextStep.type);
+                if (nextTextEl) nextTextEl.textContent = nextStep.road ? `${nextStep.text || 'Turn'} on ${nextStep.road}` : (nextStep.text || 'Follow route');
+            } else {
+                if (nextStepRow) nextStepRow.style.display = 'none';
+            }
         }
+    } else {
+        // Single / direct route fallback
+        const mainIconEl = document.getElementById('live-nav-main-icon');
+        const stepDistEl = document.getElementById('live-nav-step-dist');
+        const stepRoadEl = document.getElementById('live-nav-step-road');
+        if (mainIconEl) mainIconEl.innerHTML = `<span class="maneuver-icon">⬆️</span>`;
+        if (stepDistEl) stepDistEl.textContent = remainDistStr;
+        if (stepRoadEl) stepRoadEl.textContent = `Follow the route towards ${NAV.destName || 'destination'}`;
     }
-
-    if (NAV.routeSteps.length > 0 && NAV.currentStepIndex < NAV.routeSteps.length) {
-        const step = NAV.routeSteps[NAV.currentStepIndex];
-        nextTurn = formatInstruction(step);
-    } else if (NAV.currentRoute) {
-        nextTurn = '🏁 Destination ahead';
-    }
-
-    _setDash('dash-distance', remainDist);
-    _setDash('dash-eta', etaStr);
-    _setDash('dash-speed', NAV.currentSpeed + ' km/h');
-    _setDash('dash-accuracy', accuracy ? accuracy + ' m' : '—');
-    _setDash('dash-next-turn', nextTurn);
-}
-
-function _setDash(id, value) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = value;
 }
 
 function closestPointOnRoute(lat, lng) {
@@ -1211,15 +1499,8 @@ window.toggleFavPanel = function() {
 // START / STOP RIDE LIFECYCLE
 // ═══════════════════════════════════════════════════════════════════
 
-function startDetection() {
-    if (!checkGPSAvailability()) return;
-
-    const isLocalhost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-    if (!window.isSecureContext && !isLocalhost) {
-        alert("GPS requires HTTPS on mobile browsers.\nPlease open PathPulse using HTTPS.");
-        updateGPSStatus("error", "❌ HTTPS required for GPS");
-        return;
-    }
+async function startDetection() {
+    console.log("[PathPulse] Start Ride clicked");
 
     isDetecting = true;
     const btnStart = document.getElementById("btn-start");
@@ -1229,15 +1510,12 @@ function startDetection() {
 
     updateStatus("detecting", "📡 Ride Active — Scanning & Navigating");
 
-    const gpsStarted = startGPSTracking();
-    if (!gpsStarted) {
-        isDetecting = false;
-        if (btnStart) btnStart.disabled = false;
-        if (btnStop) btnStop.disabled = true;
-        return;
-    }
+    // 1. Request sensor permission & start accelerometer immediately from user gesture
+    await startAccelerometer();
 
-    startAccelerometer();
+    // 2. Start GPS tracking
+    startGPSTracking();
+
     showToast("▶ Ride started! GPS & motion sensor tracking active.", "success");
 }
 
@@ -1252,6 +1530,7 @@ function stopDetection() {
 
     updateStatus("idle", "⏹ Ride Stopped");
     updateGPSStatus("idle", "Inactive");
+    updateSensorStatus("idle", "Inactive");
 
     const btnStart = document.getElementById("btn-start");
     const btnStop = document.getElementById("btn-stop");
@@ -1417,4 +1696,5 @@ document.addEventListener("DOMContentLoaded", () => {
     loadExistingPatholes();
     setTimeout(updateOfflineUI, 1000);
     initializeGPS();
+    updateSensorStatus("idle", "Inactive");
 });

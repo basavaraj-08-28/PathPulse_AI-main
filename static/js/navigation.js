@@ -13,7 +13,9 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 const NAV = {
-  isNavigating:       false,    // Is navigation mode active?
+  isNavigating:       false,    // Is live navigation mode active?
+  isPaused:           false,    // Is navigation temporarily paused?
+  isFollowing:        true,     // Auto-follow user location on map
   destLat:            null,     // Current destination latitude
   destLon:            null,     // Current destination longitude
   destName:           '',       // Display name of destination
@@ -54,7 +56,6 @@ function updateNavMarker(lat, lng, heading) {
                   .addTo(window.ppMap)
                   .bindTooltip('You', { permanent: false, direction: 'top' });
   } else {
-    // Smooth animated movement
     navMarker.setLatLng([lat, lng]);
     navMarker.setIcon(icon);
   }
@@ -62,23 +63,21 @@ function updateNavMarker(lat, lng, heading) {
 
 /** Remove the nav marker when navigation is stopped */
 function removeNavMarker() {
-  if (navMarker) {
+  if (navMarker && window.ppMap) {
     window.ppMap.removeLayer(navMarker);
     navMarker = null;
   }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   PHASE 1 — Start / Stop Navigation
+   PHASE 1 — Start / Stop / Pause / Recenter Navigation Lifecycle
    ═══════════════════════════════════════════════════════════════════════ */
 
 /**
- * Begin live navigation mode toward (destLat, destLon).
- * Called from the "Start Navigation" button in route-info.
+ * Begin dedicated Page 2 Live Navigation mode toward (destLat, destLon).
  */
 window.startNavigation = function(destLat, destLon, destName) {
   if (!destLat || !destLon) {
-    // Try to read from stored destination if not passed
     destLat = NAV.destLat;
     destLon = NAV.destLon;
     destName = NAV.destName;
@@ -89,6 +88,8 @@ window.startNavigation = function(destLat, destLon, destName) {
   }
 
   NAV.isNavigating   = true;
+  NAV.isPaused       = false;
+  NAV.isFollowing    = true;
   NAV.destLat        = destLat;
   NAV.destLon        = destLon;
   NAV.destName       = destName || 'Destination';
@@ -100,40 +101,127 @@ window.startNavigation = function(destLat, destLon, destName) {
   // Extract route data from existing routingControl
   _extractRouteData();
 
-  // Show dashboard, show stop button, hide start button
-  document.getElementById('nav-dashboard').style.display = 'flex';
-  document.getElementById('btn-start-nav').style.display = 'none';
-  document.getElementById('btn-stop-nav').style.display  = 'inline-flex';
-  document.getElementById('nav-status-text').textContent  = 'Navigating';
-  document.getElementById('nav-status-badge').className   = 'nav-status-badge navigating';
+  // 1. Activate Full-Screen Page 2 Live Navigation layout
+  document.body.classList.add('live-nav-active');
 
-  // Zoom in to navigation level
-  if (NAV.lastLat) {
-    window.ppMap.setView([NAV.lastLat, NAV.lastLon], 17, { animate: true });
+  // 2. Show dedicated Live Navigation UI components
+  const topCard = document.getElementById('live-nav-top-card');
+  const speedBadge = document.getElementById('live-nav-speed-badge');
+  const floatControls = document.getElementById('live-nav-floating-controls');
+  const bottomCard = document.getElementById('live-nav-bottom-card');
+
+  if (topCard) topCard.style.display = 'flex';
+  if (speedBadge) speedBadge.style.display = 'flex';
+  if (floatControls) floatControls.style.display = 'flex';
+  if (bottomCard) bottomCard.style.display = 'flex';
+
+  // 3. Reset Pause button UI
+  const pauseBtn = document.getElementById('btn-live-pause');
+  if (pauseBtn) {
+    pauseBtn.classList.remove('is-paused');
+    const pIcon = document.getElementById('live-pause-icon');
+    const pText = document.getElementById('live-pause-text');
+    if (pIcon) pIcon.textContent = '⏸';
+    if (pText) pText.textContent = 'Pause Navigation';
   }
 
-  // Speak start
-  speakNav('Navigation started. Follow the route.');
+  // 4. Invalidate Leaflet map size so it smoothly fills full viewport
+  if (window.ppMap) {
+    setTimeout(() => {
+      window.ppMap.invalidateSize();
+      if (NAV.lastLat) {
+        window.ppMap.setView([NAV.lastLat, NAV.lastLon], 17, { animate: true });
+      }
+    }, 100);
+  }
 
-  showToast('🚗 Navigation started!', 'success');
+  // 5. Initial voice guidance and toast
+  speakNav('Navigation started. Follow the route.');
+  showToast('🚗 Live Navigation started!', 'success');
+
+  // 6. Immediately populate UI with initial state
+  if (NAV.lastLat && NAV.lastLon) {
+    updateLiveNavUI(NAV.lastLat, NAV.lastLon, null);
+  }
 };
 
 /**
- * Stop live navigation mode.
- * Preserves the current route visually until cleared.
+ * Stop live navigation mode and cleanly return to Page 1 (Route Preview).
  */
 window.stopNavigation = function() {
   NAV.isNavigating = false;
+  NAV.isPaused     = false;
+  NAV.isFollowing  = true;
 
   removeNavMarker();
 
-  document.getElementById('nav-dashboard').style.display = 'none';
-  document.getElementById('btn-start-nav').style.display = 'inline-flex';
-  document.getElementById('btn-stop-nav').style.display  = 'none';
+  // 1. Deactivate Full-Screen Page 2 layout, returning to Page 1 Route Preview
+  document.body.classList.remove('live-nav-active');
+
+  // 2. Hide Live Navigation components
+  const topCard = document.getElementById('live-nav-top-card');
+  const speedBadge = document.getElementById('live-nav-speed-badge');
+  const floatControls = document.getElementById('live-nav-floating-controls');
+  const bottomCard = document.getElementById('live-nav-bottom-card');
+
+  if (topCard) topCard.style.display = 'none';
+  if (speedBadge) speedBadge.style.display = 'none';
+  if (floatControls) floatControls.style.display = 'none';
+  if (bottomCard) bottomCard.style.display = 'none';
   hidePatholeWarning();
 
-  speakNav('Navigation stopped.');
-  showToast('Navigation stopped.', 'info');
+  // 3. Restore Start Navigation button in Route Info card
+  const startBtn = document.getElementById('btn-start-nav');
+  if (startBtn) startBtn.style.display = 'inline-flex';
+
+  // 4. Adapt Leaflet map back to normal preview container
+  if (window.ppMap) {
+    setTimeout(() => {
+      window.ppMap.invalidateSize();
+      if (NAV.currentRoute && NAV.currentRoute.length > 0) {
+        window.ppMap.fitBounds(L.latLngBounds(NAV.currentRoute), { padding: [50, 50], maxZoom: 16 });
+      }
+    }, 100);
+  }
+
+  speakNav('Navigation ended.');
+  showToast('🏁 Navigation ended. Returned to route preview.', 'info');
+};
+
+/**
+ * Toggle Pause / Resume navigation state without clearing route or reloading.
+ */
+window.togglePauseNavigation = function() {
+  if (!NAV.isNavigating) return;
+
+  NAV.isPaused = !NAV.isPaused;
+  const pauseBtn = document.getElementById('btn-live-pause');
+  const pIcon = document.getElementById('live-pause-icon');
+  const pText = document.getElementById('live-pause-text');
+
+  if (NAV.isPaused) {
+    if (pauseBtn) pauseBtn.classList.add('is-paused');
+    if (pIcon) pIcon.textContent = '▶';
+    if (pText) pText.textContent = 'Resume Navigation';
+    _speechQueue = [];
+    showToast('⏸ Navigation paused', 'warning');
+  } else {
+    if (pauseBtn) pauseBtn.classList.remove('is-paused');
+    if (pIcon) pIcon.textContent = '⏸';
+    if (pText) pText.textContent = 'Pause Navigation';
+    showToast('▶ Navigation resumed', 'success');
+  }
+};
+
+/**
+ * Recenter map camera onto user's current GPS position and resume auto-following.
+ */
+window.recenterLiveNav = function() {
+  NAV.isFollowing = true;
+  if (window.ppMap && NAV.lastLat && NAV.lastLon) {
+    window.ppMap.setView([NAV.lastLat, NAV.lastLon], 17, { animate: true });
+    showToast('📍 Following your location', 'info');
+  }
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -142,19 +230,15 @@ window.stopNavigation = function() {
 
 /**
  * Receives every GPS update from map.js's watchPosition.
- * @param {number} lat
- * @param {number} lng
- * @param {GeolocationPosition|null} pos  — full position object (may be null for simulated)
  */
 window.onNavGPSUpdate = function(lat, lng, pos) {
-  // Always track last known position
   const now = Date.now();
 
-  // Compute speed from coords delta if no native speed
-  if (pos && pos.coords.speed !== null && pos.coords.speed >= 0) {
+  // Compute speed from coords delta or native speed
+  if (pos && pos.coords && pos.coords.speed !== null && pos.coords.speed >= 0) {
     NAV.currentSpeed = (pos.coords.speed * 3.6).toFixed(1); // m/s → km/h
   } else if (NAV.lastLat !== null) {
-    const dt = (now - NAV.lastTimestamp) / 1000; // seconds
+    const dt = (now - NAV.lastTimestamp) / 1000;
     if (dt > 0) {
       const dist = haversineMeters(NAV.lastLat, NAV.lastLon, lat, lng);
       NAV.currentSpeed = ((dist / dt) * 3.6).toFixed(1);
@@ -165,42 +249,66 @@ window.onNavGPSUpdate = function(lat, lng, pos) {
   NAV.lastLon       = lng;
   NAV.lastTimestamp = now;
 
-  const accuracy = (pos && pos.coords.accuracy) ? pos.coords.accuracy.toFixed(0) : '—';
+  const accuracy = (pos && pos.coords && pos.coords.accuracy) ? pos.coords.accuracy.toFixed(0) : '—';
 
   if (!NAV.isNavigating) return;
 
-  // ── Phase 1: Smooth map centering & zoom ──────────────────────────
-  const heading = (pos && pos.coords.heading) ? pos.coords.heading : 0;
+  // ── Smooth navigation marker movement ───────────────────────────────
+  const heading = (pos && pos.coords && pos.coords.heading) ? pos.coords.heading : 0;
   updateNavMarker(lat, lng, heading);
-  window.ppMap.setView([lat, lng], clamp(window.ppMap.getZoom(), 16, 18), { animate: true });
 
-  // ── Phase 2: Dashboard update ─────────────────────────────────────
-  updateDashboard(lat, lng, accuracy);
+  // ── Auto-follow map centering ───────────────────────────────────────
+  if (NAV.isFollowing && !NAV.isPaused && window.ppMap) {
+    window.ppMap.setView([lat, lng], clamp(window.ppMap.getZoom(), 16, 18), { animate: true });
+  }
 
-  // ── Phase 3: Route deviation check ───────────────────────────────
-  checkRouteDeviation(lat, lng);
+  // ── Update Page 2 Live Navigation UI ────────────────────────────────
+  updateLiveNavUI(lat, lng, accuracy);
 
-  // ── Phase 5: Pathole proximity check ─────────────────────────────
-  checkPatholeProximityNav(lat, lng);
-
-  // ── Phase 4: Turn-by-turn voice ───────────────────────────────────
-  checkNextTurnInstruction(lat, lng);
+  // ── Active Navigation Checks (if not paused) ────────────────────────
+  if (!NAV.isPaused) {
+    checkRouteDeviation(lat, lng);
+    checkPatholeProximityNav(lat, lng);
+    checkNextTurnInstruction(lat, lng);
+  }
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
-   PHASE 2 — Navigation Dashboard
+   PHASE 2 — Live Navigation UI Updates
    ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Helper to map LRM instruction types to intuitive navigation maneuver icons.
+ */
+function getManeuverIcon(type) {
+  const iconMap = {
+    'TurnLeft': '↰',
+    'Left': '↰',
+    'TurnRight': '↱',
+    'Right': '↱',
+    'TurnSlightLeft': '↖️',
+    'SlightLeft': '↖️',
+    'TurnSlightRight': '↗️',
+    'SlightRight': '↗️',
+    'TurnSharpLeft': '⬅️',
+    'SharpLeft': '⬅️',
+    'TurnSharpRight': '➡️',
+    'SharpRight': '➡️',
+    'UTurn': '↩️',
+    'Roundabout': '🔄',
+    'DestinationReached': '🏁',
+    'WaypointReached': '📍',
+    'Head': '⬆️',
+    'Straight': '⬆️'
+  };
+  return iconMap[type] || '⬆️';
+}
 
 /**
  * Extract route coordinates and steps from Leaflet Routing Machine.
  */
 function _extractRouteData() {
   if (!window.routingControl) return;
-  const routes = window.routingControl.getRouter
-    ? null  // LRM API check
-    : null;
-
-  // LRM stores routes internally after routesfound event
   const waypointLayer = window.routingControl._routes;
   if (waypointLayer && waypointLayer.length > 0) {
     NAV.currentRoute = waypointLayer[0].coordinates;
@@ -209,50 +317,115 @@ function _extractRouteData() {
 }
 
 /**
- * Update all dashboard stat elements.
+ * Update all Page 2 Live Navigation elements: Top Card, Speed, Bottom Card.
  */
-function updateDashboard(lat, lng, accuracy) {
-  // Remaining distance
-  let remainDist = '—';
-  let etaStr     = '—';
-  let nextTurn   = '—';
+function updateLiveNavUI(lat, lng, accuracy) {
+  // 1. Update Speedometer
+  const speedValEl = document.getElementById('live-nav-speed-val');
+  if (speedValEl) {
+    const spd = parseFloat(NAV.currentSpeed);
+    speedValEl.textContent = (!isNaN(spd) && spd > 0) ? Math.round(spd) : '0';
+  }
 
+  // 2. Compute remaining distance along route from closest point
+  let remainingMeters = 0;
   if (NAV.currentRoute && NAV.currentRoute.length > 0) {
-    // Find closest point on route, sum remaining distance from there
     const { idx } = closestPointOnRoute(lat, lng);
-    const remaining = routeLengthFrom(idx);  // metres
-    remainDist = remaining >= 1000
-      ? (remaining / 1000).toFixed(1) + ' km'
-      : Math.round(remaining) + ' m';
+    remainingMeters = routeLengthFrom(idx);
+  }
 
-    // ETA based on current speed (fallback 40 km/h if stationary)
-    const speedKmh = parseFloat(NAV.currentSpeed) || 40;
-    const etaMins  = Math.round((remaining / 1000) / speedKmh * 60);
-    if (etaMins < 60) {
-      etaStr = etaMins + ' min';
-    } else {
-      etaStr = Math.floor(etaMins / 60) + 'h ' + (etaMins % 60) + 'm';
+  // 3. Format Remaining Distance
+  const remainDistStr = remainingMeters >= 1000
+    ? (remainingMeters / 1000).toFixed(1) + ' km'
+    : Math.round(remainingMeters) + ' m';
+
+  // 4. Format ETA (minutes and hours)
+  const currentSpeedNum = parseFloat(NAV.currentSpeed);
+  const speedKmh = (currentSpeedNum > 5) ? currentSpeedNum : 35; // default urban speed
+  const etaMins = Math.max(1, Math.round((remainingMeters / 1000) / speedKmh * 60));
+  const etaStr = etaMins >= 60
+    ? Math.floor(etaMins / 60) + 'h ' + (etaMins % 60) + 'm'
+    : etaMins + ' min';
+
+  // 5. Format Estimated Arrival Clock Time (e.g. "12:48 pm")
+  const arrivalDate = new Date(Date.now() + etaMins * 60 * 1000);
+  let hours = arrivalDate.getHours();
+  const minutes = arrivalDate.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'pm' : 'am';
+  hours = hours % 12 || 12;
+  const arrivalTimeStr = `${hours}:${minutes} ${ampm}`;
+
+  // 6. Update Bottom Summary Card
+  const etaLargeEl = document.getElementById('live-nav-eta-large');
+  const distRemainEl = document.getElementById('live-nav-dist-remain');
+  const arrivalTimeEl = document.getElementById('live-nav-arrival-time');
+
+  if (etaLargeEl) etaLargeEl.textContent = etaStr;
+  if (distRemainEl) distRemainEl.textContent = remainDistStr;
+  if (arrivalTimeEl) arrivalTimeEl.textContent = arrivalTimeStr;
+
+  // 7. Update Top Maneuver Card
+  if (NAV.routeSteps && NAV.routeSteps.length > 0) {
+    const currentStep = NAV.routeSteps[NAV.currentStepIndex];
+    if (currentStep) {
+      // Main Maneuver Icon
+      const mainIconEl = document.getElementById('live-nav-main-icon');
+      if (mainIconEl) {
+        mainIconEl.innerHTML = `<span class="maneuver-icon">${getManeuverIcon(currentStep.type)}</span>`;
+      }
+
+      // Distance to upcoming turn
+      const stepCoord = currentStep.waypoint ||
+        (NAV.currentRoute && NAV.currentRoute[currentStep.index]) || null;
+      let distToStep = 0;
+      if (stepCoord) {
+        distToStep = haversineMeters(lat, lng, stepCoord.lat, stepCoord.lng);
+      } else if (currentStep.distance) {
+        distToStep = currentStep.distance;
+      }
+
+      const distStepStr = distToStep >= 1000
+        ? `In ${(distToStep / 1000).toFixed(1)} km`
+        : `In ${Math.round(distToStep)} m`;
+
+      const stepDistEl = document.getElementById('live-nav-step-dist');
+      if (stepDistEl) stepDistEl.textContent = distStepStr;
+
+      // Road Name / Action
+      const stepRoadEl = document.getElementById('live-nav-step-road');
+      if (stepRoadEl) {
+        if (currentStep.road) {
+          stepRoadEl.textContent = `Continue towards ${currentStep.road}`;
+        } else if (currentStep.text) {
+          stepRoadEl.textContent = currentStep.text;
+        } else {
+          stepRoadEl.textContent = `Follow the route towards ${NAV.destName || 'destination'}`;
+        }
+      }
+
+      // Secondary (Next) maneuver preview
+      const nextStepRow = document.getElementById('live-nav-next-step-row');
+      const nextIconEl = document.getElementById('live-nav-next-icon');
+      const nextTextEl = document.getElementById('live-nav-next-text');
+
+      if (NAV.currentStepIndex + 1 < NAV.routeSteps.length) {
+        const nextStep = NAV.routeSteps[NAV.currentStepIndex + 1];
+        if (nextStepRow) nextStepRow.style.display = 'flex';
+        if (nextIconEl) nextIconEl.textContent = getManeuverIcon(nextStep.type);
+        if (nextTextEl) nextTextEl.textContent = nextStep.road ? `${nextStep.text || 'Turn'} on ${nextStep.road}` : (nextStep.text || 'Follow route');
+      } else {
+        if (nextStepRow) nextStepRow.style.display = 'none';
+      }
     }
+  } else {
+    // Single / direct route fallback
+    const mainIconEl = document.getElementById('live-nav-main-icon');
+    const stepDistEl = document.getElementById('live-nav-step-dist');
+    const stepRoadEl = document.getElementById('live-nav-step-road');
+    if (mainIconEl) mainIconEl.innerHTML = `<span class="maneuver-icon">⬆️</span>`;
+    if (stepDistEl) stepDistEl.textContent = remainDistStr;
+    if (stepRoadEl) stepRoadEl.textContent = `Follow the route towards ${NAV.destName || 'destination'}`;
   }
-
-  // Next turn instruction
-  if (NAV.routeSteps.length > 0 && NAV.currentStepIndex < NAV.routeSteps.length) {
-    const step = NAV.routeSteps[NAV.currentStepIndex];
-    nextTurn = formatInstruction(step);
-  } else if (NAV.currentRoute) {
-    nextTurn = '🏁 Destination ahead';
-  }
-
-  _setDash('dash-distance',  remainDist);
-  _setDash('dash-eta',       etaStr);
-  _setDash('dash-speed',     NAV.currentSpeed + ' km/h');
-  _setDash('dash-accuracy',  accuracy ? accuracy + ' m' : '—');
-  _setDash('dash-next-turn', nextTurn);
-}
-
-function _setDash(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = value;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -761,6 +934,15 @@ function escapeHtml(str) {
     autoToggle.checked = localStorage.getItem(LS_AUTO) === 'true';
     autoToggle.addEventListener('change', () => {
       localStorage.setItem(LS_AUTO, autoToggle.checked);
+    });
+  }
+
+  // Hook map drag to stop auto-centering so user can explore route freely
+  if (window.ppMap) {
+    window.ppMap.on('dragstart', () => {
+      if (NAV.isNavigating) {
+        NAV.isFollowing = false;
+      }
     });
   }
 

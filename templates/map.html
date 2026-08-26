@@ -279,42 +279,62 @@
         <!-- Populated by navigation.js -->
       </div>
 
-      <!-- ── Navigation Dashboard (Phase 2) ────────────────────────── -->
-      <div id="nav-dashboard" class="nav-dashboard">
-        <!-- Header bar -->
-        <div class="nav-dashboard-header">
-          <div class="nav-title">
-            🚗 PathPulse Navigation
+      <!-- ── PAGE 2: DEDICATED LIVE NAVIGATION UI ─────────────────── -->
+      <!-- 1. Top Maneuver Instruction Card -->
+      <div id="live-nav-top-card" class="live-nav-top-card" style="display:none;">
+        <div class="live-nav-top-main">
+          <div class="live-nav-icon-box" id="live-nav-main-icon">
+            <span class="maneuver-icon">⬆️</span>
           </div>
-          <span class="nav-status-badge navigating" id="nav-status-badge">
-            <span id="nav-status-text">Navigating</span>
-          </span>
-        </div>
-
-        <!-- Stats row: distance / ETA / speed / accuracy -->
-        <div class="nav-stats-row">
-          <div class="nav-stat">
-            <span class="ns-label">Distance</span>
-            <span class="ns-value" id="dash-distance">—</span>
-          </div>
-          <div class="nav-stat">
-            <span class="ns-label">ETA</span>
-            <span class="ns-value" id="dash-eta">—</span>
-          </div>
-          <div class="nav-stat">
-            <span class="ns-label">Speed</span>
-            <span class="ns-value" id="dash-speed">0 km/h</span>
-          </div>
-          <div class="nav-stat">
-            <span class="ns-label">GPS ±</span>
-            <span class="ns-value" id="dash-accuracy">—</span>
+          <div class="live-nav-instruction-text">
+            <div class="live-nav-dist" id="live-nav-step-dist">Calculating…</div>
+            <div class="live-nav-road" id="live-nav-step-road">Follow the highlighted route</div>
           </div>
         </div>
+        <div class="live-nav-next-step" id="live-nav-next-step-row" style="display:none;">
+          <span class="next-step-label">Then</span>
+          <span class="next-step-icon" id="live-nav-next-icon">↰</span>
+          <span class="next-step-text" id="live-nav-next-text">Next maneuver</span>
+        </div>
+      </div>
 
-        <!-- Next turn instruction row -->
-        <div class="nav-next-turn-row">
-          <span class="nt-label">Next</span>
-          <span class="nt-value" id="dash-next-turn">⬆️ Follow the route</span>
+      <!-- 2. Floating Speedometer Badge -->
+      <div id="live-nav-speed-badge" class="live-nav-speed-badge" style="display:none;">
+        <span class="speed-val" id="live-nav-speed-val">0</span>
+        <span class="speed-unit">km/h</span>
+      </div>
+
+      <!-- 3. Floating Map Controls (Recenter, Voice, Exit) -->
+      <div id="live-nav-floating-controls" class="live-nav-floating-controls" style="display:none;">
+        <button class="live-nav-fab" id="btn-live-recenter" onclick="recenterLiveNav()" title="Recenter on current location">
+          <span>📍</span>
+        </button>
+        <button class="live-nav-fab" id="btn-live-voice" onclick="toggleMute()" title="Mute/Unmute Voice Guidance">
+          <span id="live-voice-icon">🔊</span>
+        </button>
+        <button class="live-nav-fab live-nav-fab-exit" id="btn-live-exit-fab" onclick="stopNavigation()" title="Exit Navigation">
+          <span>✕</span>
+        </button>
+      </div>
+
+      <!-- 4. Bottom Route Summary Card -->
+      <div id="live-nav-bottom-card" class="live-nav-bottom-card" style="display:none;">
+        <div class="live-nav-bottom-info">
+          <div class="live-nav-eta-large" id="live-nav-eta-large">0 min</div>
+          <div class="live-nav-submetrics">
+            <span id="live-nav-dist-remain">0.0 km</span>
+            <span class="metric-dot">•</span>
+            <span id="live-nav-arrival-time">--:--</span>
+          </div>
+        </div>
+        <div class="live-nav-bottom-actions">
+          <button class="btn-live-pause" id="btn-live-pause" onclick="togglePauseNavigation()">
+            <span id="live-pause-icon">⏸</span>
+            <span id="live-pause-text">Pause Navigation</span>
+          </button>
+          <button class="btn-live-exit" id="btn-live-exit" onclick="stopNavigation()" title="Exit Navigation">
+            <span>✕ End</span>
+          </button>
         </div>
       </div>
 
