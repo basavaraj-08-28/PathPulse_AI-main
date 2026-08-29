@@ -609,21 +609,31 @@ function processAccelData(x, y, z, isLinear = false) {
     }
 }
 
-async function onPatholeDetected(accelPeak) {
+async function onPatholeDetected(accelPeak, overrideData = null) {
     detectionCount++;
 
-    if (!currentPosition || !gpsAvailable) {
+    let lat = overrideData && overrideData.lat ? overrideData.lat : (currentPosition ? currentPosition.lat : null);
+    let lng = overrideData && overrideData.lng ? overrideData.lng : (currentPosition ? currentPosition.lng : null);
+    let accuracy = overrideData && overrideData.accuracy ? overrideData.accuracy : (currentPosition ? currentPosition.accuracy : null);
+
+    // If still no GPS fix, fallback to map center so reports are never dropped during testing
+    if ((!lat || !lng) && typeof map !== 'undefined' && map) {
+        const center = map.getCenter();
+        lat = center.lat;
+        lng = center.lng;
+    }
+
+    if (!lat || !lng) {
         console.warn("Pothole detected, but no valid GPS position is available.");
         updateStatus("warning", "⚠️ Pothole detected — waiting for GPS...");
         addLogEntry("medium", 0, 0, accelPeak, false);
+        showToast("⚠️ Pothole detected, waiting for GPS location...", "warning");
         return;
     }
 
-    const lat = currentPosition.lat;
-    const lng = currentPosition.lng;
-    const accuracy = currentPosition.accuracy;
-
-    let severity = accelPeak >= 25 ? "high" : accelPeak >= 15 ? "medium" : "low";
+    let severity = overrideData && overrideData.severity 
+        ? overrideData.severity.toLowerCase() 
+        : (accelPeak >= 25 ? "high" : accelPeak >= 15 ? "medium" : "low");
 
     updateStatus("alert", `🚨 POTHOLE DETECTED — ${severity.toUpperCase()}`);
     setTimeout(() => {
@@ -639,14 +649,16 @@ async function onPatholeDetected(accelPeak) {
     const reportData = {
         latitude: lat,
         longitude: lng,
+        severity: severity,
         accel_peak: accelPeak,
-        confidence: Math.min(1.0, accelPeak / 40),
+        confidence: Math.min(1.0, Math.max(0.6, accelPeak / 30)),
         accuracy: accuracy || null,
         created_at: new Date().toISOString()
     };
 
     if (!navigator.onLine) {
         saveOfflinePathole(lat, lng, accelPeak, accuracy);
+        showToast("⚠️ Offline: Pothole queued locally.", "warning");
         return;
     }
 
@@ -656,10 +668,19 @@ async function onPatholeDetected(accelPeak) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(reportData)
         });
-        if (!response.ok) throw new Error(`Server returned ${response.status}`);
-        console.log("Pothole report uploaded successfully.");
+        
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.message || `Server returned ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log("[PathPulse] Pothole stored in database successfully:", result);
+        showToast(`✅ Pothole (${severity.toUpperCase()}) saved to database!`, "success");
+        loadExistingPatholes();
     } catch (error) {
-        console.warn("Network request failed. Saving offline.", error);
+        console.warn("[PathPulse] Server upload failed. Saving offline.", error);
+        showToast(`⚠️ Server error: ${error.message}. Saved offline.`, "warning");
         saveOfflinePathole(lat, lng, accelPeak, accuracy);
     }
 }
@@ -1229,30 +1250,59 @@ if (window.DeviceOrientationEvent) {
 }
 
 /**
+ * Simulate Bump action for 💥 Simulate Bump button (for testing pothole detection & database storage)
+ */
+window.simulateBump = function(forcedSeverity = 'medium') {
+    if (!isDetecting) {
+        startDetection();
+    }
+
+    let peak = 22.5;
+    if (forcedSeverity === 'high') peak = 29.0;
+    else if (forcedSeverity === 'low') peak = 13.0;
+
+    // Visual magnitude bar spike animation
+    const magnitudeValue = document.getElementById("magnitude-value");
+    if (magnitudeValue) magnitudeValue.textContent = peak.toFixed(2) + " m/s²";
+    const fill = document.getElementById("magnitude-fill");
+    if (fill) {
+        fill.style.width = "90%";
+        fill.style.background = "linear-gradient(90deg, #f59e0b, #ef4444)";
+        setTimeout(() => {
+            if (fill) fill.style.width = "0%";
+        }, 1500);
+    }
+
+    // Determine coordinate with slight random jitter so consecutive tests don't overlap exactly
+    let lat = currentPosition ? currentPosition.lat : (map ? map.getCenter().lat : 12.971599);
+    let lng = currentPosition ? currentPosition.lng : (map ? map.getCenter().lng : 77.594566);
+    lat += (Math.random() - 0.5) * 0.0004;
+    lng += (Math.random() - 0.5) * 0.0004;
+
+    onPatholeDetected(peak, { lat, lng, severity: forcedSeverity });
+};
+
+/**
  * Quick Report Hazard action for ⚠️ Report button
  */
-window.quickReportHazard = function() {
-    const lat = currentPosition ? currentPosition.lat : NAV.lastLat;
-    const lon = currentPosition ? currentPosition.lng : NAV.lastLon;
+window.quickReportHazard = async function() {
+    let lat = currentPosition ? currentPosition.lat : NAV.lastLat;
+    let lon = currentPosition ? currentPosition.lng : NAV.lastLon;
+    
+    if ((!lat || !lon) && typeof map !== 'undefined' && map) {
+        const center = map.getCenter();
+        lat = center.lat;
+        lon = center.lng;
+    }
+
     if (!lat || !lon) {
         showToast('⚠️ Waiting for GPS location to report...', 'warning');
         return;
     }
-    showToast('⚠️ Road issue reported at current position!', 'success');
-    if (navigator.onLine) {
-        fetch('/api/patholes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                latitude: lat,
-                longitude: lon,
-                severity: 'Medium',
-                accel_peak: 2.2,
-                source: 'user_report'
-            })
-        }).catch(err => console.log('Offline/local report logged:', err));
-    }
+
+    onPatholeDetected(20.0, { lat, lng: lon, severity: 'medium' });
 };
+
 
 function closestPointOnRoute(lat, lng) {
     if (!NAV.currentRoute || NAV.currentRoute.length === 0) return { idx: 0, dist: Infinity };

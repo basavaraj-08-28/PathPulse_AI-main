@@ -437,13 +437,20 @@ if (window.DeviceOrientationEvent) {
  * Quick Report Hazard action for ⚠️ Report button
  */
 window.quickReportHazard = function() {
-  const lat = NAV.lastLat;
-  const lon = NAV.lastLon;
+  let lat = NAV.lastLat;
+  let lon = NAV.lastLon;
+
+  if ((!lat || !lon) && typeof window.ppMap !== 'undefined' && window.ppMap) {
+    const center = window.ppMap.getCenter();
+    lat = center.lat;
+    lon = center.lng;
+  }
+
   if (!lat || !lon) {
     showToast('⚠️ Waiting for GPS location to report...', 'warning');
     return;
   }
-  showToast('⚠️ Road issue reported at current position!', 'success');
+
   if (navigator.onLine) {
     fetch('/api/patholes', {
       method: 'POST',
@@ -451,13 +458,28 @@ window.quickReportHazard = function() {
       body: JSON.stringify({
         latitude: lat,
         longitude: lon,
-        severity: 'Medium',
-        accel_peak: 2.2,
+        severity: 'medium',
+        accel_peak: 20.0,
         source: 'user_report'
       })
-    }).catch(err => console.log('Offline/local report logged:', err));
+    })
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    })
+    .then(() => {
+      showToast('⚠️ Road hazard reported and saved to database!', 'success');
+      if (typeof window.fetchAndRenderPotholes === 'function') {
+        window.fetchAndRenderPotholes();
+      }
+    })
+    .catch(err => {
+      console.log('Report upload error:', err);
+      showToast('⚠️ Road issue reported locally.', 'info');
+    });
   }
 };
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    PHASE 3 — Route Deviation & Recalculation

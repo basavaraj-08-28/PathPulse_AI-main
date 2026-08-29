@@ -69,6 +69,14 @@
               ⏹ Stop Ride
             </button>
           </div>
+          <div style="margin-top: 10px; display: flex; gap: 8px;">
+            <button class="btn btn-sm" id="btn-simulate-bump" onclick="simulateBump('medium')" style="flex:1; background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border:none; border-radius:8px; padding:8px; font-weight:600; cursor:pointer;" title="Simulate a road bump to test detection & database storage">
+              💥 Simulate Bump
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btn-quick-report" onclick="quickReportHazard()" style="flex:1; border-radius:8px; padding:8px; font-weight:600;" title="Report road hazard at current location">
+              ⚠️ Report Hazard
+            </button>
+          </div>
         </div>
 
         <!-- Destination Search Card -->

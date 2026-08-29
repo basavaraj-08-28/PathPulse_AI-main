@@ -10,17 +10,46 @@ from datetime import datetime, timezone
 import os
 import io
 import csv
+import shutil
 
-app = Flask(__name__)
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(basedir, 'templates'),
+    static_folder=os.path.join(basedir, 'static')
+)
 CORS(app)
 
 # Database configuration
-basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'pathpulse.db')
+# Support external PostgreSQL (e.g. Neon, Supabase, Vercel Postgres) via DATABASE_URL or POSTGRES_URL
+db_url = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
+if db_url:
+    # Modern SQLAlchemy requires postgresql:// instead of legacy postgres://
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+else:
+    # Check if running in a serverless environment with a read-only filesystem (Vercel / AWS Lambda)
+    is_serverless = bool(os.getenv('VERCEL') or os.getenv('AWS_LAMBDA_FUNCTION_NAME'))
+    if is_serverless:
+        tmp_db = '/tmp/pathpulse.db'
+        src_db = os.path.join(basedir, 'pathpulse.db')
+        # Copy initial database file to /tmp if it does not exist yet so seed data is preserved
+        if not os.path.exists(tmp_db) and os.path.exists(src_db):
+            try:
+                shutil.copy2(src_db, tmp_db)
+            except Exception as e:
+                print(f"[PathPulse] Warning: could not copy initial DB to /tmp: {e}")
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{tmp_db}'
+    else:
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'pathpulse.db')
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'pathpulse-secret-key-2026'
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'pathpulse-secret-key-2026')
 
 db = SQLAlchemy(app)
+
 
 
 # ─── Models ───────────────────────────────────────────────────────────────────
@@ -144,65 +173,81 @@ def get_patholes():
 
 @app.route('/api/patholes', methods=['POST'])
 def report_pathole():
-    """Report a new pathole detected by accelerometer"""
+    """Report a new pathole detected by accelerometer or manual report"""
     data = request.get_json()
 
     if not data or 'latitude' not in data or 'longitude' not in data:
         return jsonify({'status': 'error', 'message': 'latitude and longitude are required'}), 400
 
-    lat = data['latitude']
-    lng = data['longitude']
+    try:
+        lat = float(data['latitude'])
+        lng = float(data['longitude'])
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Invalid latitude or longitude coordinates'}), 400
 
-    # Check if a pathole already exists nearby (within ~20 meters)
-    THRESHOLD = 0.0002  # roughly 20 meters
-    existing = Pathole.query.filter(
-        Pathole.latitude.between(lat - THRESHOLD, lat + THRESHOLD),
-        Pathole.longitude.between(lng - THRESHOLD, lng + THRESHOLD),
-        Pathole.is_active == True
-    ).first()
+    try:
+        # Check if a pathole already exists nearby (within ~20 meters)
+        THRESHOLD = 0.0002  # roughly 20 meters
+        existing = Pathole.query.filter(
+            Pathole.latitude.between(lat - THRESHOLD, lat + THRESHOLD),
+            Pathole.longitude.between(lng - THRESHOLD, lng + THRESHOLD),
+            Pathole.is_active == True
+        ).first()
 
-    if existing:
-        # Increase report count and confidence
-        existing.report_count += 1
-        existing.confidence = min(1.0, existing.confidence + 0.1)
-        # Upgrade severity if reported many times
-        if existing.report_count >= 10:
-            existing.severity = 'high'
-        elif existing.report_count >= 5:
-            existing.severity = 'medium'
-        existing.updated_at = datetime.now(timezone.utc)
+        if existing:
+            # Increase report count and confidence
+            existing.report_count = (existing.report_count or 1) + 1
+            existing.confidence = min(1.0, (existing.confidence or 0.5) + 0.1)
+            # Upgrade severity if reported many times
+            if existing.report_count >= 10:
+                existing.severity = 'high'
+            elif existing.report_count >= 5:
+                existing.severity = 'medium'
+            existing.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+            return jsonify({
+                'status': 'success',
+                'message': 'Existing pathole report updated',
+                'pathole': existing.to_dict()
+            })
+
+        # Determine severity from explicit input or acceleration peak
+        severity_input = str(data.get('severity', '')).lower().strip()
+        accel_peak = float(data.get('accel_peak', 0) or 0)
+
+        if severity_input in ['low', 'medium', 'high']:
+            severity = severity_input
+        elif accel_peak >= 25:
+            severity = 'high'
+        elif accel_peak >= 15:
+            severity = 'medium'
+        else:
+            severity = 'low'
+
+        confidence_val = float(data.get('confidence', 0.6) or 0.6)
+
+        pathole = Pathole(
+            latitude=lat,
+            longitude=lng,
+            severity=severity,
+            confidence=confidence_val,
+            reported_by=str(data.get('reported_by', 'anonymous')),
+            accel_peak=accel_peak
+        )
+        db.session.add(pathole)
         db.session.commit()
+
         return jsonify({
             'status': 'success',
-            'message': 'Existing pathole report updated',
-            'pathole': existing.to_dict()
-        })
+            'message': 'New pathole reported',
+            'pathole': pathole.to_dict()
+        }), 201
 
-    # Determine severity from acceleration peak
-    accel_peak = data.get('accel_peak', 0)
-    if accel_peak >= 25:
-        severity = 'high'
-    elif accel_peak >= 15:
-        severity = 'medium'
-    else:
-        severity = 'low'
+    except Exception as e:
+        db.session.rollback()
+        print(f"[PathPulse] Error saving pathole: {e}")
+        return jsonify({'status': 'error', 'message': f'Database error: {str(e)}'}), 500
 
-    pathole = Pathole(
-        latitude=lat,
-        longitude=lng,
-        severity=severity,
-        confidence=data.get('confidence', 0.6),
-        reported_by=data.get('reported_by', 'anonymous'),
-        accel_peak=accel_peak
-    )
-    db.session.add(pathole)
-    db.session.commit()
-
-    return jsonify({
-        'status': 'success',
-        'message': 'New pathole reported',
-        'pathole': pathole.to_dict()
-    }), 201
 
 
 @app.route('/api/patholes/<int:pathole_id>/resolve', methods=['POST'])
@@ -491,7 +536,7 @@ def get_stats():
      .group_by(db.func.date(Pathole.created_at))\
      .order_by('date_str').all()
 
-    timeline = {row.date_str: row.cnt for row in daily_reports if row.date_str is not None}
+    timeline = {str(row.date_str): row.cnt for row in daily_reports if row.date_str is not None}
 
     chart_labels = []
     chart_data = []
@@ -521,21 +566,23 @@ def get_stats():
     })
 
 
-from flask import send_from_directory
-
 @app.route('/manifest.json')
 def manifest():
-    return send_from_directory('.', 'manifest.json')
+    return send_from_directory(basedir, 'manifest.json')
 
 @app.route('/service-worker.js')
 def service_worker():
-    return send_from_directory('.', 'service-worker.js')
+    return send_from_directory(basedir, 'service-worker.js')
 
-# ─── Initialize ──────────────────────────────────────────────────────────────
+# ─── Initialize Database ───────────────────────────────────────────────────────
 
-with app.app_context():
-    db.create_all()
+try:
+    with app.app_context():
+        db.create_all()
+except Exception as e:
+    print(f"[PathPulse] Database initialization warning: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
 
