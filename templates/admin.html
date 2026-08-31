@@ -186,7 +186,7 @@
     <ul class="nav-links">
       <li><a href="/">Dashboard</a></li>
       <li><a href="/map">Map</a></li>
-      <li><a href="/detect">Start Ride</a></li>
+      <li id="nav-start-ride" style="display: none;"><a href="/detect">Start Ride</a></li>
       <li><a href="/admin" class="active">Admin</a></li>
     </ul>
   </nav>
@@ -235,6 +235,30 @@
         <div class="stat-icon">🔴</div>
         <div class="stat-value" id="admin-stat-high">0</div>
         <div class="stat-label">High Severity</div>
+      </div>
+    </section>
+
+    <!-- ── Start Detection Ride Action Banner (Admin Only) ─────── -->
+    <section class="export-data-card" id="start-ride-section" style="margin-bottom: 24px; border-left: 4px solid var(--accent);">
+      <div class="export-card-content">
+        <div class="export-card-header">
+          <div class="export-icon-badge" style="background: rgba(16, 185, 129, 0.15); color: var(--accent);">📡</div>
+          <div>
+            <h3 class="export-title">Pothole Detection Ride</h3>
+            <p class="export-desc">
+              Launch real-time GPS tracking and accelerometer sensor detection to map and record road potholes.
+            </p>
+          </div>
+        </div>
+
+        <div class="export-actions-wrap">
+          <div class="export-buttons-group">
+            <a href="/detect" class="btn btn-primary" id="btn-admin-start-ride" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px;">
+              <span>🚗</span>
+              <span>Launch Start Ride Mode</span>
+            </a>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -391,11 +415,15 @@
     function showLoginView() {
       document.getElementById('login-view').style.display = 'block';
       document.getElementById('admin-dashboard-view').style.display = 'none';
+      const startRideNav = document.getElementById('nav-start-ride');
+      if (startRideNav) startRideNav.style.display = 'none';
     }
 
     function showDashboardView() {
       document.getElementById('login-view').style.display = 'none';
       document.getElementById('admin-dashboard-view').style.display = 'block';
+      const startRideNav = document.getElementById('nav-start-ride');
+      if (startRideNav) startRideNav.style.display = 'block';
       loadPatholesList();
       loadSystemStats();
     }

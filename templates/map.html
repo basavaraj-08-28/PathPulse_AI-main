@@ -283,7 +283,6 @@
     <ul class="nav-links">
       <li><a href="/">Dashboard</a></li>
       <li><a href="/map" class="active">Map</a></li>
-      <li><a href="/detect">Start Ride</a></li>
       <li><a href="/admin">Admin</a></li>
     </ul>
   </nav>
@@ -433,7 +432,7 @@
         <span class="speed-unit">km/h</span>
       </div>
 
-      <!-- 3. Floating Right-Side Controls (Compass -> Recenter -> Speaker -> Report) -->
+      <!-- 3. Floating Right-Side Controls (Compass -> Recenter -> Speaker) -->
       <div id="live-nav-floating-controls" class="live-nav-floating-controls" style="display:none;">
         <button class="live-nav-fab" id="btn-live-compass" onclick="recenterLiveNav()" title="Compass / North">
           <span id="live-compass-icon" class="compass-icon">🧭</span>
@@ -443,10 +442,6 @@
         </button>
         <button class="live-nav-fab" id="btn-live-voice" onclick="toggleMute()" title="Mute/Unmute Voice Guidance">
           <span id="live-voice-icon">🔊</span>
-        </button>
-        <button class="live-nav-pill-report" id="btn-live-report" onclick="quickReportHazard()" title="Report road issue">
-          <span class="report-icon">⚠️</span>
-          <span class="report-text">Report</span>
         </button>
       </div>
 

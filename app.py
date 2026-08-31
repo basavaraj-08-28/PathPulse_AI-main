@@ -101,7 +101,9 @@ def map_page():
 
 @app.route('/detect')
 def detect():
-    """Serve the detection/ride mode page"""
+    """Serve the detection/ride mode page (Admin only)"""
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('map_page'))
     return render_template('detect.html')
 
 
@@ -173,7 +175,10 @@ def get_patholes():
 
 @app.route('/api/patholes', methods=['POST'])
 def report_pathole():
-    """Report a new pathole detected by accelerometer or manual report"""
+    """Report a new pathole detected by accelerometer or manual report (Admin only)"""
+    if not session.get('admin_logged_in'):
+        return jsonify({'status': 'error', 'message': 'Forbidden: Only admin is authorized to detect and record potholes.'}), 403
+
     data = request.get_json()
 
     if not data or 'latitude' not in data or 'longitude' not in data:
