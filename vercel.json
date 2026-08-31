@@ -3,7 +3,28 @@
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "templates/**",
+          "static/**",
+          "manifest.json",
+          "service-worker.js",
+          "pathpulse.db"
+        ]
+      }
+    },
+    {
+      "src": "static/**",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "manifest.json",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "service-worker.js",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
