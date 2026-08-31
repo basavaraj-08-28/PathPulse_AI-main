@@ -33,12 +33,12 @@ window.addEventListener('orientationchange', () => {
 
 // ── Map Layers ──────────────────────────────────────────────────────
 
-const cartoLayer = L.tileLayer(
-  'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+const standardLayer = L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   {
     attribution:
-      '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxZoom: 20
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
   }
 );
 
@@ -59,10 +59,10 @@ const terrainLayer = L.tileLayer(
   }
 );
 
-cartoLayer.addTo(map);
+standardLayer.addTo(map);
 
 const baseMaps = {
-  "Standard": cartoLayer,
+  "Standard": standardLayer,
   "Satellite": satelliteLayer,
   "Terrain": terrainLayer
 };
