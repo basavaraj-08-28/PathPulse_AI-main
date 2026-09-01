@@ -310,6 +310,10 @@
           <label class="filter-label"><input type="radio" name="mod-filter" value="resolved" onchange="loadPatholesList()"> Resolved</label>
           <label class="filter-label"><input type="radio" name="mod-filter" value="all" onchange="loadPatholesList()"> All</label>
         </div>
+        <!-- Clear All Button -->
+        <button class="btn btn-secondary btn-sm" onclick="clearAllPatholesDatabase()" style="border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.1); font-weight: 600;" title="Permanently clear all potholes from database">
+          🧹 Clear All Potholes
+        </button>
         <!-- Logout button -->
         <button class="btn btn-secondary btn-sm" onclick="handleLogout()" style="border-color: var(--danger); color: var(--danger);">
           🚪 Logout
@@ -642,12 +646,32 @@
         
         if (data.status === 'success') {
           loadPatholesList();
-          loadSystemStats();
+          loadAdminStats();
         } else {
           alert("Error: " + data.message);
         }
       } catch (err) {
         alert("Failed to delete pathole.");
+      }
+    }
+
+    async function clearAllPatholesDatabase() {
+      const confirmed = confirm("⚠️ Are you sure you want to PERMANENTLY delete ALL pothole records from both local database and Turso Edge cloud database?\n\nThis action cannot be undone.");
+      if (!confirmed) return;
+
+      try {
+        const res = await fetch('/api/patholes/clear-all', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          alert('✅ ' + data.message);
+          loadPatholesList();
+          loadAdminStats();
+        } else {
+          alert('❌ Failed to clear database: ' + (data.message || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert('❌ Error connecting to server: ' + err.message);
       }
     }
 

@@ -11,6 +11,8 @@ import os
 import io
 import csv
 import shutil
+import json
+import urllib.request
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -85,10 +87,12 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'pathpulse-secret-key-2026')
 
 db = SQLAlchemy(app)
 
-def sync_to_turso(sql, params=None):
-    """Sync database mutations directly to Turso Edge cloud database"""
+_last_turso_pull_time = 0
+
+def _turso_execute(sql, params=None):
+    """Executes SQL against Turso Edge pipeline API using native urllib.request."""
     if not (turso_url and turso_token):
-        return
+        return None
     try:
         clean_url = turso_url.replace("libsql://", "https://")
         if not clean_url.startswith("https://"):
@@ -110,11 +114,117 @@ def sync_to_turso(sql, params=None):
             stmt["args"] = args
 
         payload = {"requests": [{"type": "execute", "stmt": stmt}, {"type": "close"}]}
-        headers = {"Authorization": f"Bearer {turso_token}", "Content-Type": "application/json"}
-        import requests
-        requests.post(pipeline_url, headers=headers, json=payload, timeout=4)
+        req_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            pipeline_url,
+            data=req_data,
+            headers={
+                "Authorization": f"Bearer {turso_token}",
+                "Content-Type": "application/json",
+                "User-Agent": "PathPulse-Vercel/1.0"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            resp_body = resp.read().decode("utf-8")
+            data = json.loads(resp_body)
+            print(f"[PathPulse] Turso sync success for SQL: {sql[:50]}...")
+            return data
     except Exception as e:
-        print(f"[PathPulse] Turso sync notice: {e}")
+        print(f"[PathPulse] Turso sync notice/error: {e}")
+        return None
+
+
+def sync_to_turso(sql, params=None):
+    """Sync database mutations directly to Turso Edge cloud database"""
+    return _turso_execute(sql, params)
+
+
+def pull_from_turso(force=False):
+    """Pulls latest pothole data from Turso Edge database into local SQLite on serverless/cold starts."""
+    global _last_turso_pull_time
+    import time
+    now = time.time()
+    # Cache for 10 seconds to avoid high latency on rapid requests, unless forced
+    if not force and (now - _last_turso_pull_time < 10):
+        return
+
+    if not (turso_url and turso_token):
+        return
+
+    try:
+        data = _turso_execute("SELECT id, latitude, longitude, severity, confidence, reported_by, report_count, accel_peak, created_at, updated_at, is_active FROM pathole")
+        if not data or 'results' not in data or not data['results']:
+            return
+
+        first_res = data['results'][0]
+        if first_res.get('type') != 'ok':
+            return
+
+        result = first_res.get('response', {}).get('result', {})
+        rows = result.get('rows', [])
+        cols = [c['name'] for c in result.get('cols', [])]
+
+        if not rows:
+            _last_turso_pull_time = now
+            return
+
+        with app.app_context():
+            db.create_all()
+            for r in rows:
+                row_dict = {}
+                for col_name, val_obj in zip(cols, r):
+                    if val_obj.get('type') == 'null':
+                        row_dict[col_name] = None
+                    elif val_obj.get('type') == 'integer':
+                        row_dict[col_name] = int(val_obj.get('value', 0))
+                    elif val_obj.get('type') == 'float':
+                        row_dict[col_name] = float(val_obj.get('value', 0.0))
+                    else:
+                        row_dict[col_name] = val_obj.get('value')
+
+                p_id = row_dict.get('id')
+                if not p_id:
+                    continue
+
+                def _parse_dt(val):
+                    if not val:
+                        return None
+                    try:
+                        return datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+                    except Exception:
+                        return datetime.now(timezone.utc)
+
+                existing = Pathole.query.get(p_id)
+                if not existing:
+                    p = Pathole(
+                        id=p_id,
+                        latitude=float(row_dict.get('latitude', 0.0)),
+                        longitude=float(row_dict.get('longitude', 0.0)),
+                        severity=str(row_dict.get('severity', 'medium')),
+                        confidence=float(row_dict.get('confidence', 0.5)),
+                        reported_by=str(row_dict.get('reported_by', 'anonymous')),
+                        report_count=int(row_dict.get('report_count', 1)),
+                        accel_peak=float(row_dict['accel_peak']) if row_dict.get('accel_peak') is not None else None,
+                        created_at=_parse_dt(row_dict.get('created_at')),
+                        updated_at=_parse_dt(row_dict.get('updated_at')),
+                        is_active=bool(row_dict.get('is_active', 1))
+                    )
+                    db.session.add(p)
+                else:
+                    existing.latitude = float(row_dict.get('latitude', existing.latitude))
+                    existing.longitude = float(row_dict.get('longitude', existing.longitude))
+                    existing.severity = str(row_dict.get('severity', existing.severity))
+                    existing.confidence = float(row_dict.get('confidence', existing.confidence))
+                    existing.reported_by = str(row_dict.get('reported_by', existing.reported_by))
+                    existing.report_count = int(row_dict.get('report_count', existing.report_count))
+                    if row_dict.get('accel_peak') is not None:
+                        existing.accel_peak = float(row_dict['accel_peak'])
+                    existing.is_active = bool(row_dict.get('is_active', existing.is_active))
+            db.session.commit()
+            _last_turso_pull_time = now
+            print(f"[PathPulse] Successfully synchronized {len(rows)} pothole records from Turso Edge cloud.")
+    except Exception as e:
+        print(f"[PathPulse] Pull from Turso notice: {e}")
 
 
 
@@ -212,6 +322,8 @@ def admin_check():
 @app.route('/api/patholes', methods=['GET'])
 def get_patholes():
     """Get patholes, optionally filtered by bounds and active status"""
+    pull_from_turso()
+
     lat_min = request.args.get('lat_min', type=float)
     lat_max = request.args.get('lat_max', type=float)
     lng_min = request.args.get('lng_min', type=float)
@@ -276,6 +388,12 @@ def report_pathole():
                 existing.severity = 'medium'
             existing.updated_at = datetime.now(timezone.utc)
             db.session.commit()
+
+            sync_to_turso(
+                "UPDATE pathole SET report_count = ?, confidence = ?, severity = ?, updated_at = ? WHERE id = ?",
+                [existing.report_count, existing.confidence, existing.severity, existing.updated_at.isoformat() if existing.updated_at else None, existing.id]
+            )
+
             return jsonify({
                 'status': 'success',
                 'message': 'Existing pathole report updated',
@@ -310,8 +428,8 @@ def report_pathole():
 
         # Cloud replicate to Turso Edge database
         sync_to_turso(
-            "INSERT INTO pathole (latitude, longitude, severity, confidence, reported_by, report_count, accel_peak, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [pathole.latitude, pathole.longitude, pathole.severity, pathole.confidence, pathole.reported_by, pathole.report_count, pathole.accel_peak, pathole.created_at.isoformat() if pathole.created_at else None, pathole.updated_at.isoformat() if pathole.updated_at else None, 1]
+            "INSERT INTO pathole (id, latitude, longitude, severity, confidence, reported_by, report_count, accel_peak, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [pathole.id, pathole.latitude, pathole.longitude, pathole.severity, pathole.confidence, pathole.reported_by, pathole.report_count, pathole.accel_peak, pathole.created_at.isoformat() if pathole.created_at else None, pathole.updated_at.isoformat() if pathole.updated_at else None, 1]
         )
 
         return jsonify({
@@ -330,8 +448,8 @@ def report_pathole():
             db.session.commit()
 
             sync_to_turso(
-                "INSERT INTO pathole (latitude, longitude, severity, confidence, reported_by, report_count, accel_peak, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [pathole.latitude, pathole.longitude, pathole.severity, pathole.confidence, pathole.reported_by, pathole.report_count, pathole.accel_peak, pathole.created_at.isoformat() if pathole.created_at else None, pathole.updated_at.isoformat() if pathole.updated_at else None, 1]
+                "INSERT INTO pathole (id, latitude, longitude, severity, confidence, reported_by, report_count, accel_peak, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [pathole.id, pathole.latitude, pathole.longitude, pathole.severity, pathole.confidence, pathole.reported_by, pathole.report_count, pathole.accel_peak, pathole.created_at.isoformat() if pathole.created_at else None, pathole.updated_at.isoformat() if pathole.updated_at else None, 1]
             )
 
             return jsonify({
@@ -407,6 +525,27 @@ def delete_pathole(pathole_id):
     sync_to_turso("DELETE FROM pathole WHERE id = ?", [pathole_id])
 
     return jsonify({'status': 'success', 'message': 'Pathole deleted permanently'})
+
+
+@app.route('/api/patholes/clear-all', methods=['POST', 'DELETE'])
+def clear_all_patholes():
+    """Clear all potholes from both local database and Turso Edge cloud database (Admin only)"""
+    if not session.get('admin_logged_in'):
+        return jsonify({'status': 'error', 'message': 'Forbidden: Admin authentication required.'}), 403
+    
+    try:
+        Pathole.query.delete()
+        db.session.commit()
+
+        sync_to_turso("DELETE FROM pathole")
+
+        return jsonify({
+            'status': 'success',
+            'message': 'All detected potholes have been permanently cleared from database.'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': f'Failed to clear database: {str(e)}'}), 500
 
 
 # ─── Data Export Endpoints (Admin Only) ────────────────────────────────────────
@@ -623,6 +762,8 @@ def export_patholes_excel():
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     """Get system statistics with breakdown details for visualization charts"""
+    pull_from_turso()
+
     total = Pathole.query.count()
     active = Pathole.query.filter_by(is_active=True).count()
     resolved = total - active
@@ -687,6 +828,7 @@ def service_worker():
 try:
     with app.app_context():
         db.create_all()
+        pull_from_turso(force=True)
 except Exception as e:
     print(f"[PathPulse] Database initialization warning: {e}")
 
