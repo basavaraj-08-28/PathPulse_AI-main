@@ -1466,22 +1466,21 @@ function updateLiveNavUI(lat, lng, accuracy) {
                 }
             }
 
-            const topLabelEl = document.getElementById('live-nav-top-label');
             if (stepRoadEl) {
-                let labelText = 'towards';
-                let roadText = NAV.destName || 'Destination';
+                let roadText = `towards ${NAV.destName || 'Destination'}`;
                 if (currentStep.road && currentStep.road.trim()) {
-                    roadText = currentStep.road.trim();
+                    roadText = `towards ${currentStep.road}`;
                 } else if (currentStep.text && currentStep.text.trim()) {
                     const txt = currentStep.text.trim();
-                    if (/^towards\s+/i.test(txt)) {
-                        roadText = txt.replace(/^towards\s+/i, '');
-                    } else {
+                    if (/^(make|turn|keep|head|continue|follow|take|exit|at|in)\b/i.test(txt) || txt.toLowerCase().startsWith('towards')) {
                         roadText = txt;
+                    } else {
+                        roadText = `towards ${txt}`;
                     }
                 }
-                if (topLabelEl && topLabelEl.textContent !== labelText) topLabelEl.textContent = labelText;
-                if (stepRoadEl.textContent !== roadText) stepRoadEl.textContent = roadText;
+                if (stepRoadEl.textContent !== roadText) {
+                    stepRoadEl.textContent = roadText;
+                }
             }
 
             // Secondary (Next) maneuver preview
@@ -1502,9 +1501,7 @@ function updateLiveNavUI(lat, lng, accuracy) {
                 mainIconEl.innerHTML = `<span class="maneuver-icon">↑</span>`;
             }
         }
-        const topLabelEl = document.getElementById('live-nav-top-label');
-        if (topLabelEl && topLabelEl.textContent !== 'towards') topLabelEl.textContent = 'towards';
-        const fallbackText = NAV.destName || 'Destination';
+        const fallbackText = `towards ${NAV.destName || 'Destination'}`;
         if (stepRoadEl && stepRoadEl.textContent !== fallbackText) stepRoadEl.textContent = fallbackText;
         if (nextStepRow && nextStepRow.style.display !== 'none') nextStepRow.style.display = 'none';
     }

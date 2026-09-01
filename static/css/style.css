@@ -1504,34 +1504,24 @@ body.live-nav-active .leaflet-container {
   overflow: hidden !important;
 }
 
-body.live-nav-active .leaflet-tile-pane {
-  filter: brightness(0.65) invert(1) contrast(3.2) hue-rotate(200deg) saturate(0.35) brightness(0.85);
-}
-
-body.live-nav-active path.leaflet-interactive {
-  stroke: #00e5ff !important;
-  stroke-opacity: 0.95 !important;
-  stroke-width: 8px !important;
-}
-
-/* ── 1. Top Turn-by-Turn Navigation Instruction Card (Google Maps Style) ─ */
+/* ── 1. Top Turn-by-Turn Navigation Instruction Card ─────────────────── */
 .live-nav-top-card {
   position: absolute;
   top: calc(14px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
-  width: calc(100% - 28px);
+  width: calc(100% - 32px);
   max-width: 480px;
-  background: #004d40;
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
   color: #ffffff;
-  border-radius: 28px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(6, 78, 59, 0.42), 0 3px 10px rgba(0, 0, 0, 0.2);
   z-index: 1200;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   animation: liveNavSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 @keyframes liveNavSlideDown {
@@ -1549,21 +1539,23 @@ body.live-nav-active path.leaflet-interactive {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 18px;
+  padding: 16px 20px;
 }
 
 .live-nav-icon-box {
-  width: 48px;
-  height: 48px;
-  background: rgba(255, 255, 255, 0.18);
-  border-radius: 16px;
+  width: 52px;
+  height: 52px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 900;
   color: #ffffff;
   flex-shrink: 0;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   line-height: 1;
 }
 
@@ -1571,42 +1563,19 @@ body.live-nav-active path.leaflet-interactive {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
-.live-nav-label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #a7f3d0;
-  letter-spacing: 0.2px;
-  text-transform: lowercase;
-}
-
 .live-nav-road {
-  font-size: 1.32rem;
+  font-size: 1.18rem;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.25;
   color: #ffffff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  letter-spacing: -0.3px;
-}
-
-.live-nav-sparkle {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: #ffffff;
-  color: #2563eb;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.35rem;
-  font-weight: 900;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  letter-spacing: -0.2px;
 }
 
 .live-nav-next-step {
@@ -1632,18 +1601,18 @@ body.live-nav-active path.leaflet-interactive {
   line-height: 1;
 }
 
-/* ── 2. Floating Speedometer Indicator (Bottom-Left in Image 1) ─────── */
+/* ── 2. Floating Speedometer Indicator (Bottom-Left) ────────────────── */
 .live-nav-speed-badge {
   position: absolute;
   left: 16px;
-  bottom: calc(130px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(185px + env(safe-area-inset-bottom, 0px));
   z-index: 1250;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: #000000;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+  border: 1.5px solid #e5e7eb;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1652,26 +1621,27 @@ body.live-nav-active path.leaflet-interactive {
 }
 
 .live-nav-speed-badge .speed-val {
-  font-size: 1.15rem;
+  font-size: 1.35rem;
   font-weight: 900;
   font-family: 'JetBrains Mono', monospace;
-  color: #ffffff;
+  color: #111827;
   letter-spacing: -0.5px;
 }
 
 .live-nav-speed-badge .speed-unit {
-  font-size: 0.52rem;
+  font-size: 0.58rem;
   font-weight: 800;
   text-transform: uppercase;
-  color: #9ca3af;
-  margin-top: 1px;
+  color: #6b7280;
+  margin-top: 2px;
+  letter-spacing: 0.3px;
 }
 
-/* ── 3. Floating Right-Side Controls (Image 1 Style) ───────────────── */
+/* ── 3. Floating Right-Side Controls (Compass, Recenter, Report) ───── */
 .live-nav-floating-controls {
   position: absolute;
   right: 16px;
-  bottom: calc(130px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(185px + env(safe-area-inset-bottom, 0px));
   z-index: 1250;
   display: flex;
   flex-direction: column;
@@ -1683,21 +1653,21 @@ body.live-nav-active path.leaflet-interactive {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #000000;
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.3rem;
   cursor: pointer;
-  color: #ffffff;
+  color: #1f2937;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .live-nav-fab:hover {
-  transform: scale(1.08);
-  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.06);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.2);
 }
 
 .live-nav-fab:active {
@@ -1713,23 +1683,23 @@ body.live-nav-active path.leaflet-interactive {
 .live-nav-pill-report {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: 28px;
-  background: #000000;
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 24px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   cursor: pointer;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 800;
-  color: #ffffff;
+  color: #1f2937;
   transition: all 0.2s ease;
   margin-top: 2px;
 }
 
 .live-nav-pill-report:hover {
   transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
   background: #fef3c7;
 }
 
@@ -1741,23 +1711,22 @@ body.live-nav-active path.leaflet-interactive {
   font-size: 1rem;
 }
 
-/* ── 4. Bottom Route Summary Panel (Google Maps Style) ─────────────── */
+/* ── 4. Bottom Route Summary Panel ─────────────────────────────────── */
 .live-nav-bottom-card {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   width: 100%;
-  background: #000000;
+  background: #ffffff;
   border-radius: 28px 28px 0 0;
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 -8px 36px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 -8px 36px rgba(0, 0, 0, 0.14), 0 -1px 3px rgba(0, 0, 0, 0.05);
   z-index: 1200;
-  padding: 12px 24px calc(14px + env(safe-area-inset-bottom, 0px));
+  padding: 18px 24px calc(18px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 12px;
   animation: liveNavSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -1769,51 +1738,19 @@ body.live-nav-active path.leaflet-interactive {
     max-width: 480px;
     bottom: 20px;
     border-radius: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 12px 42px rgba(0, 0, 0, 0.18);
   }
 }
 
-.live-nav-bottom-handle {
-  width: 36px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.35);
-  border-radius: 2px;
-  margin-bottom: 12px;
-}
-
-.live-nav-bottom-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
-
-.btn-live-circle-close,
-.btn-live-circle-alt {
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: #1f2937;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #ffffff;
-  font-size: 1.25rem;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-
-.btn-live-circle-close:hover,
-.btn-live-circle-alt:hover {
-  background: #374151;
-  transform: scale(1.06);
-}
-
-.btn-live-circle-close:active,
-.btn-live-circle-alt:active {
-  transform: scale(0.92);
+@keyframes liveNavSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(45px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .live-nav-bottom-info {
@@ -1826,9 +1763,9 @@ body.live-nav-active path.leaflet-interactive {
 }
 
 .live-nav-eta-large {
-  font-size: 1.95rem;
+  font-size: 2.3rem;
   font-weight: 900;
-  color: #34d399;
+  color: #059669;
   font-family: 'Inter', -apple-system, sans-serif;
   letter-spacing: -0.5px;
   line-height: 1.1;
@@ -1839,13 +1776,53 @@ body.live-nav-active path.leaflet-interactive {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #9ca3af;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #4b5563;
 }
 
 .metric-dot {
-  color: #6b7280;
+  color: #9ca3af;
+}
+
+.live-nav-bottom-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.btn-live-end {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 20px;
+  border-radius: 16px;
+  font-weight: 800;
+  font-size: 1rem;
+  cursor: pointer;
+  border: 1.5px solid #fca5a5;
+  background: #fee2e2;
+  color: #dc2626;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.15);
+  transition: all 0.2s ease;
+}
+
+.btn-live-end:hover {
+  background: #fecaca;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.22);
+}
+
+.btn-live-end:active {
+  transform: scale(0.98);
+}
+
+.end-icon {
+  font-size: 1.1rem;
+  font-weight: 900;
 }
 
 body.live-nav-active .pathole-warning-card {
