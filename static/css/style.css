@@ -1495,6 +1495,15 @@ body.live-nav-active .detect-container {
   gap: 0 !important;
 }
 
+body.live-nav-active .leaflet-map-pane {
+  transform-origin: 50% 65%;
+  will-change: transform;
+}
+
+body.live-nav-active .leaflet-container {
+  overflow: hidden !important;
+}
+
 /* ── 1. Top Turn-by-Turn Navigation Instruction Card ─────────────────── */
 .live-nav-top-card {
   position: absolute;
