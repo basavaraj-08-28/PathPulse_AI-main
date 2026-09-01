@@ -432,16 +432,13 @@
         <span class="speed-unit">km/h</span>
       </div>
 
-      <!-- 3. Floating Right-Side Controls (Compass -> Recenter -> Speaker) -->
+      <!-- 3. Floating Right-Side Controls (Compass -> Recenter) -->
       <div id="live-nav-floating-controls" class="live-nav-floating-controls" style="display:none;">
-        <button class="live-nav-fab" id="btn-live-compass" onclick="recenterLiveNav()" title="Compass / North">
+        <button class="live-nav-fab" id="btn-live-compass" onclick="resetCompassNorth()" title="Orient Map North">
           <span id="live-compass-icon" class="compass-icon">🧭</span>
         </button>
         <button class="live-nav-fab" id="btn-live-recenter" onclick="recenterLiveNav()" title="Recenter on current location">
           <span class="recenter-icon">📍</span>
-        </button>
-        <button class="live-nav-fab" id="btn-live-voice" onclick="toggleMute()" title="Mute/Unmute Voice Guidance">
-          <span id="live-voice-icon">🔊</span>
         </button>
       </div>
 

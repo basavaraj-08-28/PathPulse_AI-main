@@ -1301,6 +1301,21 @@ window.recenterLiveNav = function() {
     }
 };
 
+window.resetCompassNorth = function() {
+    const compassEl = document.getElementById('live-compass-icon');
+    if (compassEl) {
+        compassEl.style.transform = 'rotate(0deg)';
+    }
+    NAV.lastValidHeading = 0;
+    if (currentPosition) {
+        NAV.lastCameraLat = currentPosition.lat;
+        NAV.lastCameraLon = currentPosition.lng;
+        NAV.cameraUpdateTime = Date.now();
+        map.panTo([currentPosition.lat, currentPosition.lng], { animate: true, duration: 0.4 });
+    }
+    showToast('🧭 Map oriented North', 'info');
+};
+
 function updateLiveNavUI(lat, lng, accuracy) {
     // 1. Update Speedometer (Real GPS speed or '--')
     const speedValEl = document.getElementById('live-nav-speed-val');
@@ -1371,7 +1386,12 @@ function updateLiveNavUI(lat, lng, accuracy) {
                 if (currentStep.road && currentStep.road.trim()) {
                     roadText = `towards ${currentStep.road}`;
                 } else if (currentStep.text && currentStep.text.trim()) {
-                    roadText = currentStep.text.startsWith('towards') ? currentStep.text : `towards ${currentStep.text}`;
+                    const txt = currentStep.text.trim();
+                    if (/^(make|turn|keep|head|continue|follow|take|exit|at|in)\b/i.test(txt) || txt.toLowerCase().startsWith('towards')) {
+                        roadText = txt;
+                    } else {
+                        roadText = `towards ${txt}`;
+                    }
                 }
                 if (stepRoadEl.textContent !== roadText) {
                     stepRoadEl.textContent = roadText;

@@ -292,6 +292,21 @@ window.recenterLiveNav = function() {
   }
 };
 
+window.resetCompassNorth = function() {
+  const compassEl = document.getElementById('live-compass-icon');
+  if (compassEl) {
+    compassEl.style.transform = 'rotate(0deg)';
+  }
+  NAV.lastValidHeading = 0;
+  if (window.ppMap && NAV.lastLat && NAV.lastLon) {
+    NAV.lastCameraLat = NAV.lastLat;
+    NAV.lastCameraLon = NAV.lastLon;
+    NAV.cameraUpdateTime = Date.now();
+    window.ppMap.panTo([NAV.lastLat, NAV.lastLon], { animate: true, duration: 0.4 });
+  }
+  showToast('🧭 Map oriented North', 'info');
+};
+
 /* ═══════════════════════════════════════════════════════════════════════
    PHASE 1 — GPS Update Hook (called by map.js)
    ═══════════════════════════════════════════════════════════════════════ */
@@ -417,10 +432,9 @@ function updateLiveNavUI(lat, lng, accuracy) {
   const speedValEl = document.getElementById('live-nav-speed-val');
   if (speedValEl) {
     const spd = parseFloat(NAV.currentSpeed);
-    if (!isNaN(spd) && spd > 0) {
-      speedValEl.textContent = Math.round(spd);
-    } else {
-      speedValEl.textContent = '--';
+    const spdText = (!isNaN(spd) && spd > 0) ? String(Math.round(spd)) : '--';
+    if (speedValEl.textContent !== spdText) {
+      speedValEl.textContent = spdText;
     }
   }
 
@@ -452,16 +466,16 @@ function updateLiveNavUI(lat, lng, accuracy) {
   hours = hours % 12 || 12;
   const arrivalTimeStr = `${hours}:${minutes} ${ampm}`;
 
-  // 6. Update Bottom Summary Card
+  // 6. Update Bottom Summary Card (DOM-diffed)
   const etaLargeEl = document.getElementById('live-nav-eta-large');
   const distRemainEl = document.getElementById('live-nav-dist-remain');
   const arrivalTimeEl = document.getElementById('live-nav-arrival-time');
 
-  if (etaLargeEl) etaLargeEl.textContent = etaStr;
-  if (distRemainEl) distRemainEl.textContent = remainDistStr;
-  if (arrivalTimeEl) arrivalTimeEl.textContent = arrivalTimeStr;
+  if (etaLargeEl && etaLargeEl.textContent !== etaStr) etaLargeEl.textContent = etaStr;
+  if (distRemainEl && distRemainEl.textContent !== remainDistStr) distRemainEl.textContent = remainDistStr;
+  if (arrivalTimeEl && arrivalTimeEl.textContent !== arrivalTimeStr) arrivalTimeEl.textContent = arrivalTimeStr;
 
-  // 7. Update Top Maneuver Card ("towards [ROAD NAME]" and "Then [ICON]")
+  // 7. Update Top Maneuver Card (DOM-diffed)
   const mainIconEl = document.getElementById('live-nav-main-icon');
   const stepRoadEl = document.getElementById('live-nav-step-road');
   const nextStepRow = document.getElementById('live-nav-next-step-row');
@@ -470,34 +484,52 @@ function updateLiveNavUI(lat, lng, accuracy) {
   if (NAV.routeSteps && NAV.routeSteps.length > 0) {
     const currentStep = NAV.routeSteps[NAV.currentStepIndex];
     if (currentStep) {
+      const mChar = getManeuverIcon(currentStep.type);
       if (mainIconEl) {
-        mainIconEl.innerHTML = `<span class="maneuver-icon">${getManeuverIcon(currentStep.type)}</span>`;
+        const iconSpan = mainIconEl.querySelector('.maneuver-icon');
+        if (!iconSpan || iconSpan.textContent !== mChar) {
+          mainIconEl.innerHTML = `<span class="maneuver-icon">${mChar}</span>`;
+        }
       }
 
       if (stepRoadEl) {
+        let roadText = `towards ${NAV.destName || 'Destination'}`;
         if (currentStep.road && currentStep.road.trim()) {
-          stepRoadEl.textContent = `towards ${currentStep.road}`;
+          roadText = `towards ${currentStep.road}`;
         } else if (currentStep.text && currentStep.text.trim()) {
-          stepRoadEl.textContent = currentStep.text.startsWith('towards') ? currentStep.text : `towards ${currentStep.text}`;
-        } else {
-          stepRoadEl.textContent = `towards ${NAV.destName || 'Destination'}`;
+          const txt = currentStep.text.trim();
+          if (/^(make|turn|keep|head|continue|follow|take|exit|at|in)\b/i.test(txt) || txt.toLowerCase().startsWith('towards')) {
+            roadText = txt;
+          } else {
+            roadText = `towards ${txt}`;
+          }
+        }
+        if (stepRoadEl.textContent !== roadText) {
+          stepRoadEl.textContent = roadText;
         }
       }
 
       // Secondary (Next) maneuver preview
       if (NAV.currentStepIndex + 1 < NAV.routeSteps.length) {
         const nextStep = NAV.routeSteps[NAV.currentStepIndex + 1];
-        if (nextStepRow) nextStepRow.style.display = 'flex';
-        if (nextIconEl) nextIconEl.textContent = getManeuverIcon(nextStep.type);
+        if (nextStepRow && nextStepRow.style.display !== 'flex') nextStepRow.style.display = 'flex';
+        const nextMChar = getManeuverIcon(nextStep.type);
+        if (nextIconEl && nextIconEl.textContent !== nextMChar) nextIconEl.textContent = nextMChar;
       } else {
-        if (nextStepRow) nextStepRow.style.display = 'none';
+        if (nextStepRow && nextStepRow.style.display !== 'none') nextStepRow.style.display = 'none';
       }
     }
   } else {
     // Direct route fallback
-    if (mainIconEl) mainIconEl.innerHTML = `<span class="maneuver-icon">↑</span>`;
-    if (stepRoadEl) stepRoadEl.textContent = `towards ${NAV.destName || 'Destination'}`;
-    if (nextStepRow) nextStepRow.style.display = 'none';
+    if (mainIconEl) {
+      const iconSpan = mainIconEl.querySelector('.maneuver-icon');
+      if (!iconSpan || iconSpan.textContent !== '↑') {
+        mainIconEl.innerHTML = `<span class="maneuver-icon">↑</span>`;
+      }
+    }
+    const fallbackText = `towards ${NAV.destName || 'Destination'}`;
+    if (stepRoadEl && stepRoadEl.textContent !== fallbackText) stepRoadEl.textContent = fallbackText;
+    if (nextStepRow && nextStepRow.style.display !== 'none') nextStepRow.style.display = 'none';
   }
 }
 
