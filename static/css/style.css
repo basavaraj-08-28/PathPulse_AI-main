@@ -1472,25 +1472,11 @@ body.live-nav-active .map-container {
   border-radius: 0 !important;
 }
 
-body.live-nav-active .map-container,
-body.live-nav-active .detect-map-wrapper {
-  overflow: hidden !important;
-  position: relative !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-}
-
 body.live-nav-active #main-map,
 body.live-nav-active #detect-map {
-  position: absolute !important;
-  top: -25% !important;
-  left: -25% !important;
-  width: 150% !important;
-  height: 150% !important;
+  height: 100% !important;
+  width: 100% !important;
   border-radius: 0 !important;
-  transform-origin: 50% 50% !important;
-  will-change: transform;
 }
 
 /* In Ride & Detect page, hide sidebar panel during live navigation mode */
