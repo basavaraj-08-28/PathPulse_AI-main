@@ -22,25 +22,60 @@ app = Flask(
 CORS(app)
 
 # Database configuration
-# Support external PostgreSQL (e.g. Neon, Supabase, Vercel Postgres) via DATABASE_URL or POSTGRES_URL
+# 1. Turso Database (libSQL) via TURSO_DATABASE_URL and TURSO_AUTH_TOKEN
+DEFAULT_TURSO_URL = 'libsql://pathpulse-db-basavaraj-08-28.aws-ap-south-1.turso.io'
+DEFAULT_TURSO_TOKEN = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODgxOTg2OTMsImlkIjoiMDFhMDU4ZjItMmMwMS03MDkzLTkyNmItMTY5YTgxN2VmZTk0Iiwia2lkIjoiUGluVE5KblVTMWJLcnhUZGVsTVdqeHZFUUo0cTZDN2pOR2twdlN6MG9DMCIsInJpZCI6IjAzMjZjMjRhLTJhYjctNDE4Zi04YzVmLTFlYjUwNDZkYmI3YSJ9.XPeaaVZQw27FWF_wt9wsjCYIe93B5iV9J0yT1pj3D3z8ATKPJdjitPoQv5g-odwev-Q4WPzaNQXSevJu7liZDg'
+
+turso_url = os.getenv('TURSO_DATABASE_URL') or os.getenv('TURSO_URL') or DEFAULT_TURSO_URL
+turso_token = os.getenv('TURSO_AUTH_TOKEN') or DEFAULT_TURSO_TOKEN
 db_url = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
-if db_url:
-    # Modern SQLAlchemy requires postgresql:// instead of legacy postgres://
+
+if db_url and not db_url.startswith("libsql://"):
     if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+        # Modern SQLAlchemy requires postgresql:// instead of legacy postgres://
+        app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace("postgres://", "postgresql://", 1)
+    else:
+        app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 else:
-    # Check if running in a serverless environment with a read-only filesystem (Vercel / AWS Lambda)
-    is_serverless = bool(os.getenv('VERCEL') or os.getenv('AWS_LAMBDA_FUNCTION_NAME'))
+    # Helper to check if a directory is writable
+    def _is_dir_writable(path):
+        try:
+            testfile = os.path.join(path, '.perm_test')
+            with open(testfile, 'w') as f:
+                f.write('1')
+            os.remove(testfile)
+            return True
+        except Exception:
+            return False
+
+    # Check if running in serverless environment (Vercel, AWS Lambda, etc.) or read-only filesystem
+    is_serverless = bool(
+        os.getenv('VERCEL') or
+        os.getenv('VERCEL_ENV') or
+        os.getenv('VERCEL_URL') or
+        os.getenv('VERCEL_REGION') or
+        os.getenv('NOW_REGION') or
+        os.getenv('AWS_LAMBDA_FUNCTION_NAME') or
+        os.getenv('LAMBDA_TASK_ROOT') or
+        not _is_dir_writable(basedir)
+    )
+
     if is_serverless:
         tmp_db = '/tmp/pathpulse.db'
         src_db = os.path.join(basedir, 'pathpulse.db')
         # Copy initial database file to /tmp if it does not exist yet so seed data is preserved
         if not os.path.exists(tmp_db) and os.path.exists(src_db):
             try:
-                shutil.copy2(src_db, tmp_db)
+                # Use copyfile to avoid copying read-only file metadata from Vercel package
+                shutil.copyfile(src_db, tmp_db)
+                os.chmod(tmp_db, 0o666)
             except Exception as e:
                 print(f"[PathPulse] Warning: could not copy initial DB to /tmp: {e}")
+        elif os.path.exists(tmp_db):
+            try:
+                os.chmod(tmp_db, 0o666)
+            except Exception:
+                pass
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{tmp_db}'
     else:
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'pathpulse.db')
@@ -49,6 +84,37 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'pathpulse-secret-key-2026')
 
 db = SQLAlchemy(app)
+
+def sync_to_turso(sql, params=None):
+    """Sync database mutations directly to Turso Edge cloud database"""
+    if not (turso_url and turso_token):
+        return
+    try:
+        clean_url = turso_url.replace("libsql://", "https://")
+        if not clean_url.startswith("https://"):
+            clean_url = f"https://{clean_url}"
+        pipeline_url = f"{clean_url.rstrip('/')}/v2/pipeline"
+
+        stmt = {"sql": sql}
+        if params:
+            args = []
+            for p in params:
+                if p is None:
+                    args.append({"type": "null"})
+                elif isinstance(p, (int, bool)):
+                    args.append({"type": "integer", "value": str(int(p))})
+                elif isinstance(p, float):
+                    args.append({"type": "float", "value": p})
+                else:
+                    args.append({"type": "text", "value": str(p)})
+            stmt["args"] = args
+
+        payload = {"requests": [{"type": "execute", "stmt": stmt}, {"type": "close"}]}
+        headers = {"Authorization": f"Bearer {turso_token}", "Content-Type": "application/json"}
+        import requests
+        requests.post(pipeline_url, headers=headers, json=payload, timeout=4)
+    except Exception as e:
+        print(f"[PathPulse] Turso sync notice: {e}")
 
 
 
@@ -242,6 +308,12 @@ def report_pathole():
         db.session.add(pathole)
         db.session.commit()
 
+        # Cloud replicate to Turso Edge database
+        sync_to_turso(
+            "INSERT INTO pathole (latitude, longitude, severity, confidence, reported_by, report_count, accel_peak, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [pathole.latitude, pathole.longitude, pathole.severity, pathole.confidence, pathole.reported_by, pathole.report_count, pathole.accel_peak, pathole.created_at.isoformat() if pathole.created_at else None, pathole.updated_at.isoformat() if pathole.updated_at else None, 1]
+        )
+
         return jsonify({
             'status': 'success',
             'message': 'New pathole reported',
@@ -250,8 +322,27 @@ def report_pathole():
 
     except Exception as e:
         db.session.rollback()
-        print(f"[PathPulse] Error saving pathole: {e}")
-        return jsonify({'status': 'error', 'message': f'Database error: {str(e)}'}), 500
+        print(f"[PathPulse] Primary save failed ({e}), attempting auto-recovery...")
+        try:
+            with app.app_context():
+                db.create_all()
+            db.session.add(pathole)
+            db.session.commit()
+
+            sync_to_turso(
+                "INSERT INTO pathole (latitude, longitude, severity, confidence, reported_by, report_count, accel_peak, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [pathole.latitude, pathole.longitude, pathole.severity, pathole.confidence, pathole.reported_by, pathole.report_count, pathole.accel_peak, pathole.created_at.isoformat() if pathole.created_at else None, pathole.updated_at.isoformat() if pathole.updated_at else None, 1]
+            )
+
+            return jsonify({
+                'status': 'success',
+                'message': 'New pathole reported (auto-recovered)',
+                'pathole': pathole.to_dict()
+            }), 201
+        except Exception as retry_err:
+            db.session.rollback()
+            print(f"[PathPulse] Database save error: {e} | Recovery error: {retry_err}")
+            return jsonify({'status': 'error', 'message': f'Database error: {str(e)}'}), 500
 
 
 
@@ -264,6 +355,9 @@ def resolve_pathole(pathole_id):
     pathole.is_active = False
     pathole.updated_at = datetime.now(timezone.utc)
     db.session.commit()
+
+    sync_to_turso("UPDATE pathole SET is_active = 0, updated_at = ? WHERE id = ?", [pathole.updated_at.isoformat() if pathole.updated_at else None, pathole_id])
+
     return jsonify({'status': 'success', 'message': 'Pathole marked as resolved'})
 
 
@@ -285,6 +379,12 @@ def edit_pathole(pathole_id):
         pathole.updated_at = datetime.now(timezone.utc)
         
         db.session.commit()
+
+        sync_to_turso(
+            "UPDATE pathole SET latitude = ?, longitude = ?, severity = ?, confidence = ?, is_active = ?, updated_at = ? WHERE id = ?",
+            [pathole.latitude, pathole.longitude, pathole.severity, pathole.confidence, int(pathole.is_active), pathole.updated_at.isoformat() if pathole.updated_at else None, pathole_id]
+        )
+
         return jsonify({
             'status': 'success', 
             'message': 'Pathole updated successfully',
@@ -303,6 +403,9 @@ def delete_pathole(pathole_id):
     pathole = Pathole.query.get_or_404(pathole_id)
     db.session.delete(pathole)
     db.session.commit()
+
+    sync_to_turso("DELETE FROM pathole WHERE id = ?", [pathole_id])
+
     return jsonify({'status': 'success', 'message': 'Pathole deleted permanently'})
 
 
