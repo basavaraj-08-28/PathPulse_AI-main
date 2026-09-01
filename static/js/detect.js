@@ -1084,19 +1084,16 @@ function getForwardRouteBearing(lat, lng) {
     return calculateBearing(pFrom.lat, pFrom.lng, pTo.lat, pTo.lng);
 }
 
-/** Rotate the Leaflet map pane to match the travel direction (Google Maps style) */
+/** Rotate the Leaflet map container to match the travel direction (Google Maps style) */
 function setMapOrientation(bearing, isAnimated = true) {
     if (!NAV.isNavigating) return;
     const targetBearing = isCourseUpMode ? (bearing || 0) : 0;
     currentMapBearing = targetBearing;
 
-    if (map && map.getPanes) {
-        const mapPane = map.getPanes().mapPane;
-        if (mapPane) {
-            mapPane.style.transition = isAnimated ? 'transform 0.45s cubic-bezier(0.25, 1, 0.5, 1)' : 'none';
-            mapPane.style.transformOrigin = '50% 65%';
-            mapPane.style.transform = targetBearing !== 0 ? `rotate(${-targetBearing}deg)` : 'none';
-        }
+    const mapEl = document.getElementById('detect-map');
+    if (mapEl) {
+        mapEl.style.transition = isAnimated ? 'transform 0.45s cubic-bezier(0.25, 1, 0.5, 1)' : 'none';
+        mapEl.style.transform = targetBearing !== 0 ? `rotate(${-targetBearing}deg)` : 'none';
     }
 
     // Rotate compass icon needle to show true North
@@ -1306,12 +1303,10 @@ window.stopNavigation = function() {
     removeNavMarker();
 
     // Reset map orientation back to normal North-up
-    if (map && map.getPanes) {
-        const mapPane = map.getPanes().mapPane;
-        if (mapPane) {
-            mapPane.style.transform = 'none';
-            mapPane.style.transition = 'none';
-        }
+    const mapEl = document.getElementById('detect-map');
+    if (mapEl) {
+        mapEl.style.transform = 'none';
+        mapEl.style.transition = 'none';
     }
     isCourseUpMode = true;
     currentMapBearing = 0;
