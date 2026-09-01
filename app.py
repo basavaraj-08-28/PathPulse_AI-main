@@ -144,8 +144,8 @@ def pull_from_turso(force=False):
     global _last_turso_pull_time
     import time
     now = time.time()
-    # Cache for 10 seconds to avoid high latency on rapid requests, unless forced
-    if not force and (now - _last_turso_pull_time < 10):
+    # Cache for 4 seconds to avoid rapid duplicate queries while staying ultra-fresh
+    if not force and (now - _last_turso_pull_time < 4):
         return
 
     if not (turso_url and turso_token):
@@ -164,12 +164,18 @@ def pull_from_turso(force=False):
         rows = result.get('rows', [])
         cols = [c['name'] for c in result.get('cols', [])]
 
-        if not rows:
-            _last_turso_pull_time = now
-            return
-
         with app.app_context():
             db.create_all()
+
+            if not rows:
+                # Turso database is empty -> purge any local cached records so state is 100% synchronized
+                Pathole.query.delete()
+                db.session.commit()
+                _last_turso_pull_time = now
+                print("[PathPulse] Turso Edge cloud is empty. Purged local database to match.")
+                return
+
+            turso_ids = set()
             for r in rows:
                 row_dict = {}
                 for col_name, val_obj in zip(cols, r):
@@ -185,6 +191,7 @@ def pull_from_turso(force=False):
                 p_id = row_dict.get('id')
                 if not p_id:
                     continue
+                turso_ids.add(p_id)
 
                 def _parse_dt(val):
                     if not val:
@@ -224,6 +231,11 @@ def pull_from_turso(force=False):
                     if row_dict.get('accel_peak') is not None:
                         existing.accel_peak = float(row_dict['accel_peak'])
                     existing.is_active = bool(row_dict.get('is_active', existing.is_active))
+
+            # Delete any local records that have been deleted in Turso Edge cloud
+            if turso_ids:
+                Pathole.query.filter(~Pathole.id.in_(turso_ids)).delete(synchronize_session=False)
+
             db.session.commit()
             _last_turso_pull_time = now
             print(f"[PathPulse] Successfully synchronized {len(rows)} pothole records from Turso Edge cloud.")
@@ -400,6 +412,7 @@ def report_pathole():
                 "UPDATE pathole SET report_count = ?, confidence = ?, severity = ?, updated_at = ? WHERE id = ?",
                 [existing.report_count, existing.confidence, existing.severity, existing.updated_at.isoformat() if existing.updated_at else None, existing.id]
             )
+            _last_turso_pull_time = 0
 
             return jsonify({
                 'status': 'success',
@@ -442,6 +455,7 @@ def report_pathole():
             "INSERT INTO pathole (id, latitude, longitude, severity, confidence, reported_by, report_count, accel_peak, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [pathole.id, pathole.latitude, pathole.longitude, pathole.severity, pathole.confidence, pathole.reported_by, pathole.report_count, pathole.accel_peak, pathole.created_at.isoformat() if pathole.created_at else None, pathole.updated_at.isoformat() if pathole.updated_at else None, 1]
         )
+        _last_turso_pull_time = 0
 
         return jsonify({
             'status': 'success',
@@ -478,6 +492,7 @@ def report_pathole():
 @app.route('/api/patholes/<int:pathole_id>/resolve', methods=['POST'])
 def resolve_pathole(pathole_id):
     """Mark a pathole as resolved/fixed"""
+    global _last_turso_pull_time
     if not session.get('admin_logged_in'):
         return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
     pathole = Pathole.query.get_or_404(pathole_id)
@@ -486,6 +501,7 @@ def resolve_pathole(pathole_id):
     db.session.commit()
 
     sync_to_turso("UPDATE pathole SET is_active = 0, updated_at = ? WHERE id = ?", [pathole.updated_at.isoformat() if pathole.updated_at else None, pathole_id])
+    _last_turso_pull_time = 0
 
     return jsonify({'status': 'success', 'message': 'Pathole marked as resolved'})
 
@@ -493,6 +509,7 @@ def resolve_pathole(pathole_id):
 @app.route('/api/patholes/<int:pathole_id>/edit', methods=['POST', 'PUT'])
 def edit_pathole(pathole_id):
     """Update pathole details"""
+    global _last_turso_pull_time
     if not session.get('admin_logged_in'):
         return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
     
@@ -513,6 +530,7 @@ def edit_pathole(pathole_id):
             "UPDATE pathole SET latitude = ?, longitude = ?, severity = ?, confidence = ?, is_active = ?, updated_at = ? WHERE id = ?",
             [pathole.latitude, pathole.longitude, pathole.severity, pathole.confidence, int(pathole.is_active), pathole.updated_at.isoformat() if pathole.updated_at else None, pathole_id]
         )
+        _last_turso_pull_time = 0
 
         return jsonify({
             'status': 'success', 
@@ -526,6 +544,7 @@ def edit_pathole(pathole_id):
 @app.route('/api/patholes/<int:pathole_id>/delete', methods=['DELETE', 'POST'])
 def delete_pathole(pathole_id):
     """Permanently delete a pathole report"""
+    global _last_turso_pull_time
     if not session.get('admin_logged_in'):
         return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
     
@@ -534,6 +553,7 @@ def delete_pathole(pathole_id):
     db.session.commit()
 
     sync_to_turso("DELETE FROM pathole WHERE id = ?", [pathole_id])
+    _last_turso_pull_time = 0
 
     return jsonify({'status': 'success', 'message': 'Pathole deleted permanently'})
 
@@ -541,6 +561,7 @@ def delete_pathole(pathole_id):
 @app.route('/api/patholes/clear-all', methods=['POST', 'DELETE'])
 def clear_all_patholes():
     """Clear all potholes from both local database and Turso Edge cloud database (Admin only)"""
+    global _last_turso_pull_time
     if not session.get('admin_logged_in'):
         return jsonify({'status': 'error', 'message': 'Forbidden: Admin authentication required.'}), 403
     
@@ -549,6 +570,7 @@ def clear_all_patholes():
         db.session.commit()
 
         sync_to_turso("DELETE FROM pathole")
+        _last_turso_pull_time = 0
 
         return jsonify({
             'status': 'success',
