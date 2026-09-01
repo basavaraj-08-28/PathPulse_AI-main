@@ -38,9 +38,71 @@ const NAV = {
   markerAnimFrame:    null,
 };
 
+let isCourseUpMode = true;
+let currentMapBearing = 0;
+
+/** Calculate forward bearing angle (0° to 360°) between two coordinates */
+function calculateBearing(lat1, lon1, lat2, lon2) {
+  const toRad = deg => deg * Math.PI / 180;
+  const toDeg = rad => rad * 180 / Math.PI;
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const deltaLambda = toRad(lon2 - lon1);
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  const theta = Math.atan2(y, x);
+  return (toDeg(theta) + 360) % 360;
+}
+
+/** Look ahead on current route to calculate the road's forward direction bearing */
+function getForwardRouteBearing(lat, lng) {
+  if (!NAV.currentRoute || NAV.currentRoute.length < 2) return 0;
+  const { idx } = closestPointOnRoute(lat, lng);
+  let targetIdx = idx;
+  let accumulatedDist = 0;
+  for (let i = idx; i < NAV.currentRoute.length - 1; i++) {
+    const p1 = NAV.currentRoute[i];
+    const p2 = NAV.currentRoute[i + 1];
+    accumulatedDist += haversineMeters(p1.lat, p1.lng, p2.lat, p2.lng);
+    targetIdx = i + 1;
+    if (accumulatedDist >= 35) break;
+  }
+  const pFrom = NAV.currentRoute[idx];
+  const pTo = NAV.currentRoute[targetIdx];
+  if (!pFrom || !pTo || (pFrom.lat === pTo.lat && pFrom.lng === pTo.lng)) {
+    return 0;
+  }
+  return calculateBearing(pFrom.lat, pFrom.lng, pTo.lat, pTo.lng);
+}
+
+/** Rotate the Leaflet map container to match the travel direction (Google Maps style) */
+function setMapOrientation(bearing, isAnimated = true) {
+  if (!NAV.isNavigating) return;
+  const targetBearing = isCourseUpMode ? (bearing || 0) : 0;
+  currentMapBearing = targetBearing;
+
+  const mapEl = document.getElementById('main-map');
+  if (mapEl) {
+    mapEl.style.transition = isAnimated ? 'transform 0.45s cubic-bezier(0.25, 1, 0.5, 1)' : 'none';
+    mapEl.style.transform = targetBearing !== 0 ? `rotate(${-targetBearing}deg)` : 'none';
+  }
+
+  // Rotate compass icon needle to show true North
+  const compassEl = document.getElementById('live-compass-icon');
+  if (compassEl) {
+    compassEl.style.transform = `rotate(${targetBearing}deg)`;
+  }
+
+  // In Course-Up mode, the user arrow on screen points straight up (0°)
+  const dotEl = document.getElementById('nav-dot-elem-map') || (navMarker && navMarker.getElement ? navMarker.getElement().querySelector('.nav-dot') : null);
+  if (dotEl) {
+    dotEl.style.transform = isCourseUpMode ? 'rotate(0deg)' : `rotate(${bearing || 0}deg)`;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    PHASE 2 — Navigation Marker (Google Maps–style blue dot/arrow)
-   ═══════════════════════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════════════ */
 
 let navMarker = null;
 
@@ -65,7 +127,7 @@ function updateNavMarker(lat, lng, heading) {
     NAV.lastValidHeading = heading;
     const dotEl = document.getElementById('nav-dot-elem-map') || (navMarker.getElement ? navMarker.getElement().querySelector('.nav-dot') : null);
     if (dotEl) {
-      dotEl.style.transform = `rotate(${heading}deg)`;
+      dotEl.style.transform = isCourseUpMode ? 'rotate(0deg)' : `rotate(${heading}deg)`;
     }
   }
 }
@@ -185,7 +247,7 @@ window.startNavigation = function(destLat, destLon, destName) {
     if (pText) pText.textContent = 'Pause Navigation';
   }
 
-  // 4. Invalidate Leaflet map size smoothly and center camera on user
+  // 4. Invalidate Leaflet map size smoothly and orient camera forward along road
   if (window.ppMap) {
     requestAnimationFrame(() => {
       window.ppMap.invalidateSize({ pan: false });
@@ -193,8 +255,10 @@ window.startNavigation = function(destLat, destLon, destName) {
         NAV.lastCameraLat = NAV.lastLat;
         NAV.lastCameraLon = NAV.lastLon;
         NAV.cameraUpdateTime = Date.now();
-        window.ppMap.setView([NAV.lastLat, NAV.lastLon], 17, { animate: false });
-        updateNavMarker(NAV.lastLat, NAV.lastLon, null);
+        window.ppMap.setView([NAV.lastLat, NAV.lastLon], 18, { animate: false });
+        const initBearing = getForwardRouteBearing(NAV.lastLat, NAV.lastLon);
+        setMapOrientation(initBearing, false);
+        updateNavMarker(NAV.lastLat, NAV.lastLon, initBearing);
         updateLiveNavUI(NAV.lastLat, NAV.lastLon, null);
       }
     });
@@ -219,6 +283,15 @@ window.stopNavigation = function() {
   NAV.isFollowing  = true;
 
   removeNavMarker();
+
+  // Reset map orientation back to normal North-up
+  const mapEl = document.getElementById('main-map');
+  if (mapEl) {
+    mapEl.style.transform = 'none';
+    mapEl.style.transition = 'none';
+  }
+  isCourseUpMode = true;
+  currentMapBearing = 0;
 
   // 1. Deactivate Full-Screen Page 2 layout, returning to Page 1 Route Preview
   document.body.classList.remove('live-nav-active');
@@ -288,18 +361,24 @@ window.recenterLiveNav = function() {
     NAV.lastCameraLon = NAV.lastLon;
     NAV.cameraUpdateTime = Date.now();
     window.ppMap.panTo([NAV.lastLat, NAV.lastLon], { animate: true, duration: 0.5 });
+    if (isCourseUpMode) {
+      const fwdBearing = getForwardRouteBearing(NAV.lastLat, NAV.lastLon);
+      setMapOrientation(fwdBearing, true);
+    }
     showToast('📍 Following your location', 'info');
   }
 };
 
 window.resetCompassNorth = function() {
-  if (window.ppMap && NAV.lastLat && NAV.lastLon) {
-    NAV.lastCameraLat = NAV.lastLat;
-    NAV.lastCameraLon = NAV.lastLon;
-    NAV.cameraUpdateTime = Date.now();
-    window.ppMap.panTo([NAV.lastLat, NAV.lastLon], { animate: true, duration: 0.5 });
+  isCourseUpMode = !isCourseUpMode;
+  if (isCourseUpMode) {
+    const fwdBearing = getForwardRouteBearing(NAV.lastLat, NAV.lastLon);
+    setMapOrientation(fwdBearing, true);
+    showToast('⬆️ Straight Ahead Mode', 'info');
+  } else {
+    setMapOrientation(0, true);
+    showToast('🧭 North Up Mode (0°)', 'info');
   }
-  showToast('🧭 Facing North', 'info');
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
