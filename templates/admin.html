@@ -645,7 +645,7 @@
         
         if (data.status === 'success') {
           loadPatholesList();
-          loadAdminStats();
+          loadSystemStats();
         } else {
           alert("Error: " + data.message);
         }
@@ -664,7 +664,7 @@
         if (res.ok && data.status === 'success') {
           alert('✅ ' + data.message);
           loadPatholesList();
-          loadAdminStats();
+          loadSystemStats();
         } else {
           alert('❌ Failed to clear database: ' + (data.message || 'Unknown error'));
         }
