@@ -19,14 +19,18 @@ const map = L.map('main-map', {
 
 window.ppMap = map;
 
-// Auto-adjust Leaflet viewport when screen size or orientation changes
+let _mapResizeTimer = null;
 window.addEventListener('resize', () => {
-  if (map) map.invalidateSize();
+  if (document.body.classList.contains('live-nav-active')) return;
+  clearTimeout(_mapResizeTimer);
+  _mapResizeTimer = setTimeout(() => {
+    if (map) map.invalidateSize({ pan: false });
+  }, 250);
 }, { passive: true });
 
 window.addEventListener('orientationchange', () => {
   setTimeout(() => {
-    if (map) map.invalidateSize();
+    if (map) map.invalidateSize({ pan: false });
   }, 200);
 }, { passive: true });
 
@@ -168,155 +172,79 @@ function showUserLocation(
   ];
 
 
-  // ────────────────────────────────────────────────────────────────
-  // CREATE USER LOCATION MARKER
-  // ────────────────────────────────────────────────────────────────
-
-  if (!userLocationMarker) {
-
-    userLocationMarker =
-      L.circleMarker(
-        latLng,
-        {
-          radius: 8,
-
-          fillColor: '#06d6a0',
-
-          fillOpacity: 1,
-
-          color: '#ffffff',
-
-          weight: 3
-        }
-      )
-      .addTo(map)
-      .bindPopup(
-        '📍 You are here'
-      );
-
-
-    // GPS accuracy circle
-
-    userLocationCircle =
-      L.circle(
-        latLng,
-        {
-          radius:
-            Number.isFinite(accuracy) &&
-            accuracy > 0
-              ? accuracy
-              : 30,
-
-          fillColor: '#06d6a0',
-
-          fillOpacity: 0.08,
-
-          color: '#06d6a0',
-
-          weight: 1,
-
-          opacity: 0.3
-        }
-      )
-      .addTo(map);
-
+  // If Live Navigation is active, suppress regular user markers so only navMarker is shown
+  if (typeof NAV !== 'undefined' && NAV.isNavigating) {
+    if (userLocationMarker && map.hasLayer(userLocationMarker)) map.removeLayer(userLocationMarker);
+    if (userLocationCircle && map.hasLayer(userLocationCircle)) map.removeLayer(userLocationCircle);
   } else {
+    // ────────────────────────────────────────────────────────────────
+    // CREATE / UPDATE USER LOCATION MARKER
+    // ────────────────────────────────────────────────────────────────
+    if (!userLocationMarker) {
+      userLocationMarker =
+        L.circleMarker(
+          latLng,
+          {
+            radius: 8,
+            fillColor: '#06d6a0',
+            fillOpacity: 1,
+            color: '#ffffff',
+            weight: 3
+          }
+        )
+        .addTo(map)
+        .bindPopup('📍 You are here');
 
-    // ──────────────────────────────────────────────────────────────
-    // UPDATE EXISTING MARKER
-    // ──────────────────────────────────────────────────────────────
+      // GPS accuracy circle
+      userLocationCircle =
+        L.circle(
+          latLng,
+          {
+            radius:
+              Number.isFinite(accuracy) &&
+              accuracy > 0
+                ? accuracy
+                : 30,
+            fillColor: '#06d6a0',
+            fillOpacity: 0.08,
+            color: '#06d6a0',
+            weight: 1,
+            opacity: 0.3
+          }
+        )
+        .addTo(map);
+    } else {
+      if (!map.hasLayer(userLocationMarker)) userLocationMarker.addTo(map);
+      userLocationMarker.setLatLng(latLng);
 
-    userLocationMarker.setLatLng(
-      latLng
-    );
+      if (userLocationCircle) {
+        if (!map.hasLayer(userLocationCircle)) userLocationCircle.addTo(map);
+        userLocationCircle.setLatLng(latLng);
 
-
-    if (userLocationCircle) {
-
-      userLocationCircle.setLatLng(
-        latLng
-      );
-
-
-      if (
-        Number.isFinite(accuracy) &&
-        accuracy > 0
-      ) {
-
-        userLocationCircle.setRadius(
-          accuracy
-        );
+        if (Number.isFinite(accuracy) && accuracy > 0) {
+          userLocationCircle.setRadius(accuracy);
+        }
       }
     }
   }
 
-
   // ──────────────────────────────────────────────────────────────
-  // CENTER MAP ON FIRST REAL GPS FIX
+  // CENTER MAP ON FIRST REAL GPS FIX (PREVIEW ONLY)
   // ──────────────────────────────────────────────────────────────
-
-  if (centerMap) {
-
-    map.setView(
-      latLng,
-      16
-    );
+  if (centerMap && (typeof NAV === 'undefined' || !NAV.isNavigating)) {
+    map.setView(latLng, 16);
   }
-
-
-  // ──────────────────────────────────────────────────────────────
-  // UPDATE LIVE ROUTING
-  // ──────────────────────────────────────────────────────────────
-
-  if (
-    window.routingControl
-  ) {
-
-    try {
-
-      window.routingControl.spliceWaypoints(
-        0,
-        1,
-        L.latLng(
-          lat,
-          lng
-        )
-      );
-
-    } catch (error) {
-
-      console.warn(
-        '⚠️ Could not update route start:',
-        error
-      );
-    }
-  }
-
 
   // ──────────────────────────────────────────────────────────────
   // CHECK POTHOLE PROXIMITY
   // ──────────────────────────────────────────────────────────────
-
-  checkProximity(
-    lat,
-    lng
-  );
-
+  checkProximity(lat, lng);
 
   // ──────────────────────────────────────────────────────────────
   // NAVIGATION GPS HOOK
   // ──────────────────────────────────────────────────────────────
-
-  if (
-    typeof window.onNavGPSUpdate ===
-    'function'
-  ) {
-
-    window.onNavGPSUpdate(
-      lat,
-      lng,
-      pos
-    );
+  if (typeof window.onNavGPSUpdate === 'function') {
+    window.onNavGPSUpdate(lat, lng, pos);
   }
 }
 
