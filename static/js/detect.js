@@ -51,6 +51,8 @@ let isSensorSupported = true;
 // Navigation State
 const NAV = {
     isNavigating: false,
+    isPaused: false,
+    isFollowing: true,
     destLat: null,
     destLon: null,
     destName: '',
@@ -64,6 +66,11 @@ const NAV = {
     lastTimestamp: null,
     currentSpeed: '0',
     recalcCooldown: false,
+    lastValidHeading: null,
+    lastCameraLat: null,
+    lastCameraLon: null,
+    cameraUpdateTime: 0,
+    markerAnimFrame: null,
 };
 
 let navMarker = null;
@@ -265,6 +272,14 @@ function updateGPSStatus(state, message, accuracy = null) {
 }
 
 function updateUserLocationOnMap(lat, lng, accuracy, centerMap = false) {
+    // If Live Navigation is active, suppress regular user markers so only navMarker is shown
+    if (NAV.isNavigating) {
+        if (userMarker && map.hasLayer(userMarker)) map.removeLayer(userMarker);
+        if (userAccuracyCircle && map.hasLayer(userAccuracyCircle)) map.removeLayer(userAccuracyCircle);
+        if (pulseMarker && map.hasLayer(pulseMarker)) map.removeLayer(pulseMarker);
+        return;
+    }
+
     const position = [lat, lng];
 
     if (!userMarker) {
@@ -276,6 +291,7 @@ function updateUserLocationOnMap(lat, lng, accuracy, centerMap = false) {
             weight: 3
         }).addTo(map).bindPopup("📍 You are here");
     } else {
+        if (!map.hasLayer(userMarker)) userMarker.addTo(map);
         userMarker.setLatLng(position);
     }
 
@@ -289,6 +305,7 @@ function updateUserLocationOnMap(lat, lng, accuracy, centerMap = false) {
             opacity: 0.3
         }).addTo(map);
     } else {
+        if (!map.hasLayer(userAccuracyCircle)) userAccuracyCircle.addTo(map);
         userAccuracyCircle.setLatLng(position);
         if (accuracy && Number.isFinite(accuracy)) {
             userAccuracyCircle.setRadius(accuracy);
@@ -307,11 +324,12 @@ function updateUserLocationOnMap(lat, lng, accuracy, centerMap = false) {
 
         if (!pulseTimer) {
             pulseTimer = setInterval(() => {
-                if (!currentPosition || !pulseMarker) return;
+                if (!currentPosition || !pulseMarker || NAV.isNavigating) return;
                 pulseMarker.setLatLng([currentPosition.lat, currentPosition.lng]);
             }, 500);
         }
     } else {
+        if (!map.hasLayer(pulseMarker)) pulseMarker.addTo(map);
         pulseMarker.setLatLng(position);
     }
 
@@ -351,13 +369,47 @@ function stopGPSTracking() {
     updateGPSStatus("warning", "GPS tracking stopped");
 }
 
+function updateCameraFollow(lat, lng) {
+    if (!NAV.isNavigating || !NAV.isFollowing || NAV.isPaused) return;
+
+    const now = Date.now();
+    if (NAV.lastCameraLat === null || NAV.lastCameraLon === null) {
+        NAV.lastCameraLat = lat;
+        NAV.lastCameraLon = lng;
+        NAV.cameraUpdateTime = now;
+        map.setView([lat, lng], clamp(map.getZoom(), 16, 18), { animate: false });
+        return;
+    }
+
+    const distFromCam = haversineMeters(NAV.lastCameraLat, NAV.lastCameraLon, lat, lng);
+    const timeSinceLastCam = now - NAV.cameraUpdateTime;
+
+    // Check drift from current visual center
+    const center = map.getCenter();
+    const distFromCenter = haversineMeters(center.lat, center.lng, lat, lng);
+
+    // Only move camera when moved > 15m or center drift > 25m or (time > 3000ms and dist > 8m)
+    if (distFromCam > 15 || distFromCenter > 25 || (timeSinceLastCam > 3000 && distFromCam > 8)) {
+        NAV.lastCameraLat = lat;
+        NAV.lastCameraLon = lng;
+        NAV.cameraUpdateTime = now;
+        map.panTo([lat, lng], { animate: true, duration: 0.6, easeLinearity: 0.5 });
+    }
+}
+
 function onPositionUpdate(position) {
     if (!position || !position.coords) return;
     const lat = position.coords.latitude;
     const lng = position.coords.longitude;
     const accuracy = position.coords.accuracy;
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+
+    // Ignore extreme GPS noise (>150m radius) when moving
+    if (accuracy && accuracy > 150) {
+        console.warn("[GPS] Low accuracy reading filtered:", accuracy);
+        return;
+    }
 
     const now = Date.now();
     if (position.coords.speed !== null && position.coords.speed >= 0) {
@@ -395,11 +447,11 @@ function onPositionUpdate(position) {
 
     // Live Navigation GPS update
     if (NAV.isNavigating) {
-        const heading = position.coords.heading || 0;
+        const heading = (position.coords.heading !== null && !isNaN(position.coords.heading) && position.coords.heading >= 0)
+            ? position.coords.heading
+            : NAV.lastValidHeading;
         updateNavMarker(lat, lng, heading);
-        if (NAV.isFollowing && !NAV.isPaused) {
-            map.setView([lat, lng], clamp(map.getZoom(), 16, 18), { animate: true });
-        }
+        updateCameraFollow(lat, lng);
         updateLiveNavUI(lat, lng, accuracy ? accuracy.toFixed(0) : '—');
         if (!NAV.isPaused) {
             checkRouteDeviation(lat, lng);
@@ -992,31 +1044,85 @@ window.clearRoute = function() {
 // ═══════════════════════════════════════════════════════════════════
 
 function updateNavMarker(lat, lng, heading) {
-    const icon = L.divIcon({
-        className: 'nav-marker',
-        html: `<div class="nav-dot" style="transform:rotate(${heading || 0}deg)">
-                 <div class="nav-dot-inner"></div>
-                 <div class="nav-dot-halo"></div>
-               </div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-    });
-
     if (!navMarker) {
-        navMarker = L.marker([lat, lng], { icon, zIndexOffset: 1000 })
-                      .addTo(map)
-                      .bindTooltip('You', { permanent: false, direction: 'top' });
+        const icon = L.divIcon({
+            className: 'nav-marker',
+            html: `<div class="nav-dot" id="nav-dot-elem">
+                     <div class="nav-dot-inner"></div>
+                     <div class="nav-dot-halo"></div>
+                   </div>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+        });
+        navMarker = L.marker([lat, lng], { icon, zIndexOffset: 1000 }).addTo(map);
     } else {
-        navMarker.setLatLng([lat, lng]);
-        navMarker.setIcon(icon);
+        animateNavMarkerTo(lat, lng);
+    }
+
+    // Update rotation only when heading is valid and has meaningfully changed
+    if (heading !== null && heading !== undefined && !isNaN(heading) && Number.isFinite(heading) && heading >= 0) {
+        if (NAV.lastValidHeading === null || Math.abs(heading - NAV.lastValidHeading) >= 3) {
+            NAV.lastValidHeading = heading;
+            const dotEl = document.getElementById('nav-dot-elem') || (navMarker.getElement() ? navMarker.getElement().querySelector('.nav-dot') : null);
+            if (dotEl) {
+                dotEl.style.transform = `rotate(${heading}deg)`;
+            }
+        }
     }
 }
 
+function animateNavMarkerTo(targetLat, targetLng) {
+    if (!navMarker) return;
+    if (NAV.markerAnimFrame) {
+        cancelAnimationFrame(NAV.markerAnimFrame);
+        NAV.markerAnimFrame = null;
+    }
+
+    const curLatLng = navMarker.getLatLng();
+    const startLat = curLatLng.lat;
+    const startLng = curLatLng.lng;
+    const dist = haversineMeters(startLat, startLng, targetLat, targetLng);
+
+    // If jump is very small (<0.2m) or huge teleport (>200m), set directly
+    if (dist < 0.2 || dist > 200) {
+        navMarker.setLatLng([targetLat, targetLng]);
+        return;
+    }
+
+    const startTime = performance.now();
+    const duration = Math.min(500, Math.max(200, dist * 20));
+
+    function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        const ease = 1 - (1 - progress) * (1 - progress);
+
+        const curL = startLat + (targetLat - startLat) * ease;
+        const curG = startLng + (targetLng - startLng) * ease;
+        if (navMarker) {
+            navMarker.setLatLng([curL, curG]);
+        }
+
+        if (progress < 1) {
+            NAV.markerAnimFrame = requestAnimationFrame(step);
+        } else {
+            NAV.markerAnimFrame = null;
+        }
+    }
+
+    NAV.markerAnimFrame = requestAnimationFrame(step);
+}
+
 function removeNavMarker() {
+    if (NAV.markerAnimFrame) {
+        cancelAnimationFrame(NAV.markerAnimFrame);
+        NAV.markerAnimFrame = null;
+    }
     if (navMarker) {
         map.removeLayer(navMarker);
         navMarker = null;
     }
+    NAV.lastValidHeading = null;
 }
 
 function getManeuverIcon(type) {
@@ -1064,6 +1170,9 @@ window.startNavigation = function(destLat, destLon, destName) {
     NAV.spokenInstructions = new Set();
     NAV.spokenPatholes = new Set();
     NAV.recalcCooldown = false;
+    NAV.lastCameraLat = null;
+    NAV.lastCameraLon = null;
+    NAV.cameraUpdateTime = 0;
 
     if (!isDetecting) {
         startDetection();
@@ -1072,7 +1181,12 @@ window.startNavigation = function(destLat, destLon, destName) {
     // 1. Activate Full-Screen Page 2 Live Navigation layout
     document.body.classList.add('live-nav-active');
 
-    // 2. Show dedicated Live Navigation UI components
+    // 2. Hide non-nav user markers so only navMarker is active
+    if (userMarker && map.hasLayer(userMarker)) map.removeLayer(userMarker);
+    if (userAccuracyCircle && map.hasLayer(userAccuracyCircle)) map.removeLayer(userAccuracyCircle);
+    if (pulseMarker && map.hasLayer(pulseMarker)) map.removeLayer(pulseMarker);
+
+    // 3. Show dedicated Live Navigation UI components
     const topCard = document.getElementById('live-nav-top-card');
     const speedBadge = document.getElementById('live-nav-speed-badge');
     const floatControls = document.getElementById('live-nav-floating-controls');
@@ -1083,7 +1197,7 @@ window.startNavigation = function(destLat, destLon, destName) {
     if (floatControls) floatControls.style.display = 'flex';
     if (bottomCard) bottomCard.style.display = 'flex';
 
-    // 3. Reset Pause button UI
+    // 4. Reset Pause button UI
     const pauseBtn = document.getElementById('btn-live-pause');
     if (pauseBtn) {
         pauseBtn.classList.remove('is-paused');
@@ -1093,22 +1207,22 @@ window.startNavigation = function(destLat, destLon, destName) {
         if (pText) pText.textContent = 'Pause Navigation';
     }
 
-    // 4. Invalidate Leaflet map size so it smoothly fills full viewport
-    setTimeout(() => {
-        map.invalidateSize();
+    // 5. Invalidate Leaflet map size smoothly and position camera once without animation queue
+    requestAnimationFrame(() => {
+        map.invalidateSize({ pan: false });
         if (currentPosition) {
-            map.setView([currentPosition.lat, currentPosition.lng], 17, { animate: true });
+            NAV.lastCameraLat = currentPosition.lat;
+            NAV.lastCameraLon = currentPosition.lng;
+            NAV.cameraUpdateTime = Date.now();
+            map.setView([currentPosition.lat, currentPosition.lng], 17, { animate: false });
+            updateNavMarker(currentPosition.lat, currentPosition.lng, null);
+            updateLiveNavUI(currentPosition.lat, currentPosition.lng, currentPosition.accuracy);
         }
-    }, 100);
+    });
 
-    // 5. Initial voice guidance and toast
+    // 6. Initial voice guidance and toast
     speakNav('Navigation started. Follow the route.');
     showToast('🚗 Live Navigation started! Pothole detection active.', 'success');
-
-    // 6. Immediately populate UI with initial state
-    if (currentPosition) {
-        updateLiveNavUI(currentPosition.lat, currentPosition.lng, currentPosition.accuracy);
-    }
 };
 
 window.stopNavigation = function() {
@@ -1137,9 +1251,14 @@ window.stopNavigation = function() {
     const btnStartNav = document.getElementById('btn-start-nav');
     if (btnStartNav) btnStartNav.style.display = 'inline-flex';
 
-    // 4. Adapt Leaflet map back to normal preview container
+    // 4. Restore regular user marker
+    if (currentPosition) {
+        updateUserLocationOnMap(currentPosition.lat, currentPosition.lng, currentPosition.accuracy, false);
+    }
+
+    // 5. Adapt Leaflet map back to normal preview container
     setTimeout(() => {
-        map.invalidateSize();
+        map.invalidateSize({ pan: false });
         if (NAV.currentRoute && NAV.currentRoute.length > 0) {
             map.fitBounds(L.latLngBounds(NAV.currentRoute), { padding: [50, 50], maxZoom: 16 });
         }
@@ -1174,7 +1293,10 @@ window.togglePauseNavigation = function() {
 window.recenterLiveNav = function() {
     NAV.isFollowing = true;
     if (currentPosition) {
-        map.setView([currentPosition.lat, currentPosition.lng], 17, { animate: true });
+        NAV.lastCameraLat = currentPosition.lat;
+        NAV.lastCameraLon = currentPosition.lng;
+        NAV.cameraUpdateTime = Date.now();
+        map.panTo([currentPosition.lat, currentPosition.lng], { animate: true, duration: 0.5 });
         showToast('📍 Following your location', 'info');
     }
 };
@@ -1184,10 +1306,9 @@ function updateLiveNavUI(lat, lng, accuracy) {
     const speedValEl = document.getElementById('live-nav-speed-val');
     if (speedValEl) {
         const spd = parseFloat(NAV.currentSpeed);
-        if (!isNaN(spd) && spd > 0) {
-            speedValEl.textContent = Math.round(spd);
-        } else {
-            speedValEl.textContent = '--';
+        const spdText = (!isNaN(spd) && spd > 0) ? String(Math.round(spd)) : '--';
+        if (speedValEl.textContent !== spdText) {
+            speedValEl.textContent = spdText;
         }
     }
 
@@ -1219,16 +1340,16 @@ function updateLiveNavUI(lat, lng, accuracy) {
     hours = hours % 12 || 12;
     const arrivalTimeStr = `${hours}:${minutes} ${ampm}`;
 
-    // 6. Update Bottom Summary Card
+    // 6. Update Bottom Summary Card (DOM-diffed)
     const etaLargeEl = document.getElementById('live-nav-eta-large');
     const distRemainEl = document.getElementById('live-nav-dist-remain');
     const arrivalTimeEl = document.getElementById('live-nav-arrival-time');
 
-    if (etaLargeEl) etaLargeEl.textContent = etaStr;
-    if (distRemainEl) distRemainEl.textContent = remainDistStr;
-    if (arrivalTimeEl) arrivalTimeEl.textContent = arrivalTimeStr;
+    if (etaLargeEl && etaLargeEl.textContent !== etaStr) etaLargeEl.textContent = etaStr;
+    if (distRemainEl && distRemainEl.textContent !== remainDistStr) distRemainEl.textContent = remainDistStr;
+    if (arrivalTimeEl && arrivalTimeEl.textContent !== arrivalTimeStr) arrivalTimeEl.textContent = arrivalTimeStr;
 
-    // 7. Update Top Maneuver Card ("towards [ROAD NAME]" and "Then [ICON]")
+    // 7. Update Top Maneuver Card (DOM-diffed)
     const mainIconEl = document.getElementById('live-nav-main-icon');
     const stepRoadEl = document.getElementById('live-nav-step-road');
     const nextStepRow = document.getElementById('live-nav-next-step-row');
@@ -1237,34 +1358,47 @@ function updateLiveNavUI(lat, lng, accuracy) {
     if (NAV.routeSteps && NAV.routeSteps.length > 0) {
         const currentStep = NAV.routeSteps[NAV.currentStepIndex];
         if (currentStep) {
+            const mChar = getManeuverIcon(currentStep.type);
             if (mainIconEl) {
-                mainIconEl.innerHTML = `<span class="maneuver-icon">${getManeuverIcon(currentStep.type)}</span>`;
+                const iconSpan = mainIconEl.querySelector('.maneuver-icon');
+                if (!iconSpan || iconSpan.textContent !== mChar) {
+                    mainIconEl.innerHTML = `<span class="maneuver-icon">${mChar}</span>`;
+                }
             }
 
             if (stepRoadEl) {
+                let roadText = `towards ${NAV.destName || 'Destination'}`;
                 if (currentStep.road && currentStep.road.trim()) {
-                    stepRoadEl.textContent = `towards ${currentStep.road}`;
+                    roadText = `towards ${currentStep.road}`;
                 } else if (currentStep.text && currentStep.text.trim()) {
-                    stepRoadEl.textContent = currentStep.text.startsWith('towards') ? currentStep.text : `towards ${currentStep.text}`;
-                } else {
-                    stepRoadEl.textContent = `towards ${NAV.destName || 'Destination'}`;
+                    roadText = currentStep.text.startsWith('towards') ? currentStep.text : `towards ${currentStep.text}`;
+                }
+                if (stepRoadEl.textContent !== roadText) {
+                    stepRoadEl.textContent = roadText;
                 }
             }
 
             // Secondary (Next) maneuver preview
             if (NAV.currentStepIndex + 1 < NAV.routeSteps.length) {
                 const nextStep = NAV.routeSteps[NAV.currentStepIndex + 1];
-                if (nextStepRow) nextStepRow.style.display = 'flex';
-                if (nextIconEl) nextIconEl.textContent = getManeuverIcon(nextStep.type);
+                if (nextStepRow && nextStepRow.style.display !== 'flex') nextStepRow.style.display = 'flex';
+                const nextMChar = getManeuverIcon(nextStep.type);
+                if (nextIconEl && nextIconEl.textContent !== nextMChar) nextIconEl.textContent = nextMChar;
             } else {
-                if (nextStepRow) nextStepRow.style.display = 'none';
+                if (nextStepRow && nextStepRow.style.display !== 'none') nextStepRow.style.display = 'none';
             }
         }
     } else {
         // Direct route fallback
-        if (mainIconEl) mainIconEl.innerHTML = `<span class="maneuver-icon">↑</span>`;
-        if (stepRoadEl) stepRoadEl.textContent = `towards ${NAV.destName || 'Destination'}`;
-        if (nextStepRow) nextStepRow.style.display = 'none';
+        if (mainIconEl) {
+            const iconSpan = mainIconEl.querySelector('.maneuver-icon');
+            if (!iconSpan || iconSpan.textContent !== '↑') {
+                mainIconEl.innerHTML = `<span class="maneuver-icon">↑</span>`;
+            }
+        }
+        const fallbackText = `towards ${NAV.destName || 'Destination'}`;
+        if (stepRoadEl && stepRoadEl.textContent !== fallbackText) stepRoadEl.textContent = fallbackText;
+        if (nextStepRow && nextStepRow.style.display !== 'none') nextStepRow.style.display = 'none';
     }
 }
 
@@ -1376,6 +1510,7 @@ function routeLengthFrom(startIndex) {
 function checkRouteDeviation(lat, lng) {
     if (!NAV.currentRoute || NAV.currentRoute.length === 0) return;
     if (NAV.recalcCooldown) return;
+    if (gpsAccuracy && gpsAccuracy > 45) return; // Don't trigger false off-route recalculation on noisy GPS reading
 
     const { dist } = closestPointOnRoute(lat, lng);
     if (dist > 50) { // 50m off route

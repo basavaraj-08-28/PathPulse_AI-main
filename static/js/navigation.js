@@ -31,6 +31,11 @@ const NAV = {
   recalcCooldown:     false,    // Prevents rapid recalculation loops
   autoStart:          false,    // Auto-start nav after destination select
   pendingAutoStart:   false,    // Flag for event-driven auto-start navigation
+  lastValidHeading:   null,
+  lastCameraLat:      null,
+  lastCameraLon:      null,
+  cameraUpdateTime:   0,
+  markerAnimFrame:    null,
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -41,32 +46,84 @@ let navMarker = null;
 
 /** Creates or updates the blue navigation marker at [lat, lng] */
 function updateNavMarker(lat, lng, heading) {
-  const icon = L.divIcon({
-    className: 'nav-marker',
-    html: `<div class="nav-dot" style="transform:rotate(${heading || 0}deg)">
-             <div class="nav-dot-inner"></div>
-             <div class="nav-dot-halo"></div>
-           </div>`,
-    iconSize:   [32, 32],
-    iconAnchor: [16, 16],
-  });
-
   if (!navMarker) {
-    navMarker = L.marker([lat, lng], { icon, zIndexOffset: 1000 })
-                  .addTo(window.ppMap)
-                  .bindTooltip('You', { permanent: false, direction: 'top' });
+    const icon = L.divIcon({
+      className: 'nav-marker',
+      html: `<div class="nav-dot" id="nav-dot-elem-map">
+               <div class="nav-dot-inner"></div>
+               <div class="nav-dot-halo"></div>
+             </div>`,
+      iconSize:   [32, 32],
+      iconAnchor: [16, 16],
+    });
+    navMarker = L.marker([lat, lng], { icon, zIndexOffset: 1000 }).addTo(window.ppMap);
   } else {
-    navMarker.setLatLng([lat, lng]);
-    navMarker.setIcon(icon);
+    animateNavMarkerTo(lat, lng);
   }
+
+  if (heading !== null && heading !== undefined && !isNaN(heading) && Number.isFinite(heading) && heading >= 0) {
+    if (NAV.lastValidHeading === null || Math.abs(heading - NAV.lastValidHeading) >= 3) {
+      NAV.lastValidHeading = heading;
+      const dotEl = document.getElementById('nav-dot-elem-map') || (navMarker.getElement() ? navMarker.getElement().querySelector('.nav-dot') : null);
+      if (dotEl) {
+        dotEl.style.transform = `rotate(${heading}deg)`;
+      }
+    }
+  }
+}
+
+function animateNavMarkerTo(targetLat, targetLng) {
+  if (!navMarker) return;
+  if (NAV.markerAnimFrame) {
+    cancelAnimationFrame(NAV.markerAnimFrame);
+    NAV.markerAnimFrame = null;
+  }
+
+  const curLatLng = navMarker.getLatLng();
+  const startLat = curLatLng.lat;
+  const startLng = curLatLng.lng;
+  const dist = haversineMeters(startLat, startLng, targetLat, targetLng);
+
+  if (dist < 0.2 || dist > 200) {
+    navMarker.setLatLng([targetLat, targetLng]);
+    return;
+  }
+
+  const startTime = performance.now();
+  const duration = Math.min(500, Math.max(200, dist * 20));
+
+  function step(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(1, elapsed / duration);
+    const ease = 1 - (1 - progress) * (1 - progress);
+
+    const curL = startLat + (targetLat - startLat) * ease;
+    const curG = startLng + (targetLng - startLng) * ease;
+    if (navMarker) {
+      navMarker.setLatLng([curL, curG]);
+    }
+
+    if (progress < 1) {
+      NAV.markerAnimFrame = requestAnimationFrame(step);
+    } else {
+      NAV.markerAnimFrame = null;
+    }
+  }
+
+  NAV.markerAnimFrame = requestAnimationFrame(step);
 }
 
 /** Remove the nav marker when navigation is stopped */
 function removeNavMarker() {
+  if (NAV.markerAnimFrame) {
+    cancelAnimationFrame(NAV.markerAnimFrame);
+    NAV.markerAnimFrame = null;
+  }
   if (navMarker && window.ppMap) {
     window.ppMap.removeLayer(navMarker);
     navMarker = null;
   }
+  NAV.lastValidHeading = null;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -97,6 +154,9 @@ window.startNavigation = function(destLat, destLon, destName) {
   NAV.spokenInstructions = new Set();
   NAV.spokenPatholes     = new Set();
   NAV.recalcCooldown     = false;
+  NAV.lastCameraLat      = null;
+  NAV.lastCameraLon      = null;
+  NAV.cameraUpdateTime   = 0;
 
   // Extract route data from existing routingControl
   _extractRouteData();
@@ -125,14 +185,19 @@ window.startNavigation = function(destLat, destLon, destName) {
     if (pText) pText.textContent = 'Pause Navigation';
   }
 
-  // 4. Invalidate Leaflet map size so it smoothly fills full viewport
+  // 4. Invalidate Leaflet map size smoothly and position camera once
   if (window.ppMap) {
-    setTimeout(() => {
-      window.ppMap.invalidateSize();
-      if (NAV.lastLat) {
-        window.ppMap.setView([NAV.lastLat, NAV.lastLon], 17, { animate: true });
+    requestAnimationFrame(() => {
+      window.ppMap.invalidateSize({ pan: false });
+      if (NAV.lastLat && NAV.lastLon) {
+        NAV.lastCameraLat = NAV.lastLat;
+        NAV.lastCameraLon = NAV.lastLon;
+        NAV.cameraUpdateTime = Date.now();
+        window.ppMap.setView([NAV.lastLat, NAV.lastLon], 17, { animate: false });
+        updateNavMarker(NAV.lastLat, NAV.lastLon, null);
+        updateLiveNavUI(NAV.lastLat, NAV.lastLon, null);
       }
-    }, 100);
+    });
   }
 
   // 5. Initial voice guidance and toast
@@ -219,7 +284,10 @@ window.togglePauseNavigation = function() {
 window.recenterLiveNav = function() {
   NAV.isFollowing = true;
   if (window.ppMap && NAV.lastLat && NAV.lastLon) {
-    window.ppMap.setView([NAV.lastLat, NAV.lastLon], 17, { animate: true });
+    NAV.lastCameraLat = NAV.lastLat;
+    NAV.lastCameraLon = NAV.lastLon;
+    NAV.cameraUpdateTime = Date.now();
+    window.ppMap.panTo([NAV.lastLat, NAV.lastLon], { animate: true, duration: 0.5 });
     showToast('📍 Following your location', 'info');
   }
 };
@@ -227,6 +295,31 @@ window.recenterLiveNav = function() {
 /* ═══════════════════════════════════════════════════════════════════════
    PHASE 1 — GPS Update Hook (called by map.js)
    ═══════════════════════════════════════════════════════════════════════ */
+
+function updateNavCameraFollow(lat, lng) {
+  if (!NAV.isNavigating || !NAV.isFollowing || NAV.isPaused || !window.ppMap) return;
+
+  const now = Date.now();
+  if (NAV.lastCameraLat === null || NAV.lastCameraLon === null) {
+    NAV.lastCameraLat = lat;
+    NAV.lastCameraLon = lng;
+    NAV.cameraUpdateTime = now;
+    window.ppMap.setView([lat, lng], clamp(window.ppMap.getZoom(), 16, 18), { animate: false });
+    return;
+  }
+
+  const distFromCam = haversineMeters(NAV.lastCameraLat, NAV.lastCameraLon, lat, lng);
+  const timeSinceLastCam = now - NAV.cameraUpdateTime;
+  const center = window.ppMap.getCenter();
+  const distFromCenter = haversineMeters(center.lat, center.lng, lat, lng);
+
+  if (distFromCam > 15 || distFromCenter > 25 || (timeSinceLastCam > 3000 && distFromCam > 8)) {
+    NAV.lastCameraLat = lat;
+    NAV.lastCameraLon = lng;
+    NAV.cameraUpdateTime = now;
+    window.ppMap.panTo([lat, lng], { animate: true, duration: 0.6, easeLinearity: 0.5 });
+  }
+}
 
 /**
  * Receives every GPS update from map.js's watchPosition.
@@ -254,13 +347,13 @@ window.onNavGPSUpdate = function(lat, lng, pos) {
   if (!NAV.isNavigating) return;
 
   // ── Smooth navigation marker movement ───────────────────────────────
-  const heading = (pos && pos.coords && pos.coords.heading) ? pos.coords.heading : 0;
+  const heading = (pos && pos.coords && pos.coords.heading !== null && !isNaN(pos.coords.heading) && pos.coords.heading >= 0)
+    ? pos.coords.heading
+    : NAV.lastValidHeading;
   updateNavMarker(lat, lng, heading);
 
-  // ── Auto-follow map centering ───────────────────────────────────────
-  if (NAV.isFollowing && !NAV.isPaused && window.ppMap) {
-    window.ppMap.setView([lat, lng], clamp(window.ppMap.getZoom(), 16, 18), { animate: true });
-  }
+  // ── Controlled camera following ───────────────────────────────────────
+  updateNavCameraFollow(lat, lng);
 
   // ── Update Page 2 Live Navigation UI ────────────────────────────────
   updateLiveNavUI(lat, lng, accuracy);
