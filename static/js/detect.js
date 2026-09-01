@@ -952,10 +952,8 @@ window.getDirections = function(destLat, destLon) {
     const userLon = currentPosition.lng;
 
     if (destinationMarker) destinationMarker.closePopup();
-    if (window.routingControl) {
-        map.removeControl(window.routingControl);
-        window.routingControl = null;
-    }
+    window.selectedRouteIndex = 0;
+    window.allComputedRoutes = [];
 
     window.routingControl = L.Routing.control({
         waypoints: [
@@ -963,16 +961,23 @@ window.getDirections = function(destLat, destLon) {
             L.latLng(destLat, destLon)
         ],
         routeWhileDragging: false,
-        showAlternatives: false,
-        fitSelectedRoutes: false,
+        showAlternatives: true,
+        altLineOptions: {
+            styles: [
+                { color: '#64748b', weight: 5, opacity: 0.6, dashArray: '6, 8' }
+            ]
+        },
         lineOptions: {
-            styles: [{ color: '#2563eb', weight: 6, opacity: 0.85 }]
+            styles: [{ color: '#2563eb', weight: 6, opacity: 0.9 }]
         },
         createMarker: function() { return null; }
     }).addTo(map);
 
     window.routingControl.on('routesfound', function(e) {
+        window.allComputedRoutes = e.routes || [];
+        window.selectedRouteIndex = 0;
         const route = e.routes[0];
+
         NAV.currentRoute = route.coordinates;
         NAV.routeSteps = route.instructions || [];
 
@@ -997,6 +1002,9 @@ window.getDirections = function(destLat, destLon) {
         if (routeInfo) routeInfo.style.display = 'block';
         if (btnStartNav) btnStartNav.style.display = 'inline-flex';
 
+        // Render alternative routes bar if multiple options found
+        renderRouteAlternatives(e.routes);
+
         const hintEl = document.getElementById('map-click-hint');
         if (hintEl) hintEl.classList.add('hidden');
 
@@ -1009,9 +1017,9 @@ window.getDirections = function(destLat, destLon) {
         }
         window._detectRouteToastTimer = setTimeout(() => {
             if (routePotholes.length > 0) {
-                showToast(`⚠️ ${routePotholes.length} pothole(s) detected near your route!`, 'warning');
+                showToast(`⚠️ ${routePotholes.length} pothole(s) detected along selected route!`, 'warning');
             } else {
-                showToast(`✅ Route clear! No potholes detected along this route.`, 'success');
+                showToast(`✅ Route clear! No potholes detected along selected route.`, 'success');
             }
         }, 300);
 
@@ -1027,9 +1035,101 @@ window.getDirections = function(destLat, destLon) {
     });
 };
 
+/** Render interactive pills for fastest vs alternative/shortest routes */
+function renderRouteAlternatives(routes) {
+    const bar = document.getElementById('route-alternatives-bar');
+    if (!bar) return;
+    if (!routes || routes.length <= 1) {
+        bar.style.display = 'none';
+        bar.innerHTML = '';
+        return;
+    }
+
+    bar.innerHTML = '';
+    bar.style.display = 'flex';
+
+    let minDistanceIdx = 0;
+    let minTimeIdx = 0;
+    routes.forEach((r, i) => {
+        if (r.summary.totalDistance < routes[minDistanceIdx].summary.totalDistance) minDistanceIdx = i;
+        if (r.summary.totalTime < routes[minTimeIdx].summary.totalTime) minTimeIdx = i;
+    });
+
+    routes.forEach((rt, index) => {
+        const distKm = (rt.summary.totalDistance / 1000).toFixed(1);
+        const timeMin = Math.round(rt.summary.totalTime / 60);
+        const timeStr = timeMin >= 60 ? Math.floor(timeMin / 60) + 'h ' + (timeMin % 60) + 'm' : timeMin + ' min';
+
+        let badgeLabel = index === minTimeIdx ? '⚡ Fastest' : (index === minDistanceIdx ? '📏 Shortest' : `Alt ${index + 1}`);
+
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = `route-alt-chip ${index === window.selectedRouteIndex ? 'active' : ''}`;
+        chip.innerHTML = `<span class="alt-badge">${badgeLabel}</span> <span class="alt-time">${timeStr}</span> <span class="alt-dist">(${distKm} km)</span>`;
+        chip.onclick = () => window.selectAlternativeRoute(index);
+        bar.appendChild(chip);
+    });
+}
+
+/** User clicked an alternative route */
+window.selectAlternativeRoute = function(index) {
+    if (!window.allComputedRoutes || !window.allComputedRoutes[index]) return;
+    window.selectedRouteIndex = index;
+    const route = window.allComputedRoutes[index];
+
+    NAV.currentRoute = route.coordinates;
+    NAV.routeSteps = route.instructions || [];
+
+    const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
+    const travelTimeMin = Math.round(route.summary.totalTime / 60);
+    const etaStr = travelTimeMin >= 60 ? Math.floor(travelTimeMin / 60) + 'h ' + (travelTimeMin % 60) + 'm' : travelTimeMin + ' min';
+
+    const routeDistance = document.getElementById('route-distance');
+    const routeEta = document.getElementById('route-eta');
+    if (routeDistance) routeDistance.textContent = distanceKm;
+    if (routeEta) routeEta.textContent = etaStr;
+
+    const countEl = document.getElementById('route-potholes-count');
+    const routePotholes = filterPotholesAlongRoute(route.coordinates, ROUTE_PROXIMITY_THRESHOLD_METERS);
+    if (countEl) countEl.textContent = routePotholes.length;
+
+    // Update active styling on alternative chips
+    document.querySelectorAll('.route-alt-chip').forEach((el, idx) => {
+        if (idx === index) el.classList.add('active');
+        else el.classList.remove('active');
+    });
+
+    // Re-style route lines so selected one is prominent
+    if (window.routingControl && window.routingControl._routes) {
+        window.routingControl._routes.forEach((layer, idx) => {
+            if (layer.line) {
+                if (idx === index) {
+                    layer.line.setStyle({ color: '#2563eb', opacity: 0.9, weight: 6, dashArray: null });
+                    layer.line.bringToFront();
+                } else {
+                    layer.line.setStyle({ color: '#64748b', opacity: 0.6, weight: 5, dashArray: '6, 8' });
+                }
+            }
+        });
+    }
+
+    if (typeof showToast === 'function') {
+        showToast(`Selected Route: ${distanceKm} km • ${etaStr}`, 'info');
+    }
+};
+
 window.clearRoute = function() {
     NAV.currentRoute = null;
     NAV.routeSteps = [];
+    window.allComputedRoutes = [];
+    window.selectedRouteIndex = 0;
+
+    const bar = document.getElementById('route-alternatives-bar');
+    if (bar) {
+        bar.style.display = 'none';
+        bar.innerHTML = '';
+    }
+
     if (window.routingControl) {
         map.removeControl(window.routingControl);
         window.routingControl = null;

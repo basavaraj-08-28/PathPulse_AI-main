@@ -2501,3 +2501,60 @@ body.live-nav-active .pathole-warning-card {
     justify-content: center;
   }
 }
+
+/* ── Route Alternatives Selector Bar ────────────────────────────── */
+.route-alternatives-bar {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.route-alt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.route-alt-chip:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.route-alt-chip.active {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+}
+
+.alt-badge {
+  font-weight: 700;
+}
+
+.alt-time {
+  color: #059669;
+}
+
+.route-alt-chip.active .alt-time {
+  color: #047857;
+}
+
+.alt-dist {
+  color: #64748b;
+  font-size: 0.78rem;
+}
