@@ -194,6 +194,10 @@ def pull_from_turso(force=False):
                     except Exception:
                         return datetime.now(timezone.utc)
 
+                rep = str(row_dict.get('reported_by') or 'Admin')
+                if rep.strip().lower() in ['anonymous', 'user', 'none', '']:
+                    rep = 'Admin'
+
                 existing = Pathole.query.get(p_id)
                 if not existing:
                     p = Pathole(
@@ -202,7 +206,7 @@ def pull_from_turso(force=False):
                         longitude=float(row_dict.get('longitude', 0.0)),
                         severity=str(row_dict.get('severity', 'medium')),
                         confidence=float(row_dict.get('confidence', 0.5)),
-                        reported_by=str(row_dict.get('reported_by', 'anonymous')),
+                        reported_by=rep,
                         report_count=int(row_dict.get('report_count', 1)),
                         accel_peak=float(row_dict['accel_peak']) if row_dict.get('accel_peak') is not None else None,
                         created_at=_parse_dt(row_dict.get('created_at')),
@@ -215,7 +219,7 @@ def pull_from_turso(force=False):
                     existing.longitude = float(row_dict.get('longitude', existing.longitude))
                     existing.severity = str(row_dict.get('severity', existing.severity))
                     existing.confidence = float(row_dict.get('confidence', existing.confidence))
-                    existing.reported_by = str(row_dict.get('reported_by', existing.reported_by))
+                    existing.reported_by = rep
                     existing.report_count = int(row_dict.get('report_count', existing.report_count))
                     if row_dict.get('accel_peak') is not None:
                         existing.accel_peak = float(row_dict['accel_peak'])
@@ -237,7 +241,7 @@ class Pathole(db.Model):
     longitude = db.Column(db.Float, nullable=False)
     severity = db.Column(db.String(20), nullable=False, default='medium')  # low, medium, high
     confidence = db.Column(db.Float, nullable=False, default=0.5)
-    reported_by = db.Column(db.String(100), default='anonymous')
+    reported_by = db.Column(db.String(100), default='Admin')
     report_count = db.Column(db.Integer, default=1)
     accel_peak = db.Column(db.Float, nullable=True)  # peak acceleration value
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -246,13 +250,16 @@ class Pathole(db.Model):
     is_active = db.Column(db.Boolean, default=True)
 
     def to_dict(self):
+        reporter_name = self.reported_by or 'Admin'
+        if reporter_name.strip().lower() in ['anonymous', 'user', 'none', '']:
+            reporter_name = 'Admin'
         return {
             'id': self.id,
             'latitude': self.latitude,
             'longitude': self.longitude,
             'severity': self.severity,
             'confidence': self.confidence,
-            'reported_by': self.reported_by,
+            'reported_by': reporter_name,
             'report_count': self.report_count,
             'accel_peak': self.accel_peak,
             'created_at': self.created_at.isoformat() if self.created_at else None,
@@ -415,12 +422,16 @@ def report_pathole():
 
         confidence_val = float(data.get('confidence', 0.6) or 0.6)
 
+        reporter_name = str(data.get('reported_by') or 'Admin')
+        if reporter_name.strip().lower() in ['anonymous', 'user', 'none', '']:
+            reporter_name = 'Admin'
+
         pathole = Pathole(
             latitude=lat,
             longitude=lng,
             severity=severity,
             confidence=confidence_val,
-            reported_by=str(data.get('reported_by', 'anonymous')),
+            reported_by=reporter_name,
             accel_peak=accel_peak
         )
         db.session.add(pathole)
@@ -608,7 +619,7 @@ def export_patholes_csv():
             p.report_count or 1,
             accel_str,
             status_str,
-            p.reported_by or 'Anonymous'
+            p.reported_by if (p.reported_by and p.reported_by.strip().lower() not in ['anonymous', 'user', 'none', '']) else 'Admin'
         ])
 
     today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
@@ -707,7 +718,7 @@ def export_patholes_excel():
             p.report_count or 1,
             accel_val,
             status_str,
-            p.reported_by or 'Anonymous'
+            p.reported_by if (p.reported_by and p.reported_by.strip().lower() not in ['anonymous', 'user', 'none', '']) else 'Admin'
         ]
         ws.append(row)
 

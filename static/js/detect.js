@@ -672,6 +672,7 @@ async function onPatholeDetected(accelPeak, overrideData = null) {
         accel_peak: accelPeak,
         confidence: Math.min(1.0, Math.max(0.6, accelPeak / 30)),
         accuracy: accuracy || null,
+        reported_by: "Admin",
         created_at: new Date().toISOString()
     };
 
@@ -1660,6 +1661,7 @@ async function saveOfflinePathole(lat, lng, accelPeak, accuracy) {
             longitude: lng,
             accel_peak: accelPeak,
             accuracy: accuracy,
+            reported_by: "Admin",
             timestamp: new Date().toISOString()
         });
         updateOfflineUI();
