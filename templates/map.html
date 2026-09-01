@@ -410,19 +410,21 @@
       </div>
 
       <!-- ── PAGE 2: DEDICATED LIVE NAVIGATION UI ─────────────────── -->
-      <!-- 1. Top Turn-by-Turn Navigation Instruction Card -->
+      <!-- 1. Top Turn-by-Turn Maneuver Card (Google Maps Style) -->
       <div id="live-nav-top-card" class="live-nav-top-card" style="display:none;">
         <div class="live-nav-top-main">
           <div class="live-nav-icon-box" id="live-nav-main-icon">
             <span class="maneuver-icon">↑</span>
           </div>
           <div class="live-nav-instruction-text">
-            <div class="live-nav-road" id="live-nav-step-road">towards Destination</div>
+            <span class="live-nav-label" id="live-nav-top-label">towards</span>
+            <div class="live-nav-road" id="live-nav-step-road">Destination</div>
             <div class="live-nav-next-step" id="live-nav-next-step-row" style="display:none;">
               <span class="next-step-label">Then</span>
               <span class="next-step-icon" id="live-nav-next-icon">↰</span>
             </div>
           </div>
+          <div class="live-nav-sparkle">✦</div>
         </div>
       </div>
 
@@ -432,7 +434,7 @@
         <span class="speed-unit">km/h</span>
       </div>
 
-      <!-- 3. Floating Right-Side Controls (Compass -> Recenter) -->
+      <!-- 3. Floating Right-Side Controls (Compass -> Recenter -> Report) -->
       <div id="live-nav-floating-controls" class="live-nav-floating-controls" style="display:none;">
         <button class="live-nav-fab" id="btn-live-compass" onclick="resetCompassNorth()" title="Orient Map North">
           <span id="live-compass-icon" class="compass-icon">🧭</span>
@@ -440,22 +442,29 @@
         <button class="live-nav-fab" id="btn-live-recenter" onclick="recenterLiveNav()" title="Recenter on current location">
           <span class="recenter-icon">📍</span>
         </button>
+        <button class="live-nav-pill-report" id="btn-live-report" onclick="quickReportHazard()" title="Report road hazard">
+          <span class="report-icon">⚠️</span>
+          <span class="report-text">Report</span>
+        </button>
       </div>
 
-      <!-- 4. Bottom Route Summary Panel -->
+      <!-- 4. Bottom Route Summary Panel (Google Maps Style) -->
       <div id="live-nav-bottom-card" class="live-nav-bottom-card" style="display:none;">
-        <div class="live-nav-bottom-info">
-          <div class="live-nav-eta-large" id="live-nav-eta-large">-- min</div>
-          <div class="live-nav-submetrics">
-            <span id="live-nav-dist-remain">-- km</span>
-            <span class="metric-dot">•</span>
-            <span id="live-nav-arrival-time">--:--</span>
+        <div class="live-nav-bottom-handle"></div>
+        <div class="live-nav-bottom-row">
+          <button class="btn-live-circle-close" id="btn-live-end" onclick="stopNavigation()" title="End Navigation">
+            <span class="close-icon">✕</span>
+          </button>
+          <div class="live-nav-bottom-info">
+            <div class="live-nav-eta-large" id="live-nav-eta-large">-- min</div>
+            <div class="live-nav-submetrics">
+              <span id="live-nav-dist-remain">-- km</span>
+              <span class="metric-dot">•</span>
+              <span id="live-nav-arrival-time">--:--</span>
+            </div>
           </div>
-        </div>
-        <div class="live-nav-bottom-actions">
-          <button class="btn-live-end" id="btn-live-end" onclick="stopNavigation()" title="End Navigation">
-            <span class="end-icon">✕</span>
-            <span>End Navigation</span>
+          <button class="btn-live-circle-alt" id="btn-live-pause" onclick="togglePauseNavigation()" title="Pause/Resume Navigation">
+            <span id="live-pause-icon">🔀</span>
           </button>
         </div>
       </div>
