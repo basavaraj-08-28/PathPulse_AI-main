@@ -1833,31 +1833,25 @@ window.getDirections =
           );
 
 
-        // Toast
-
-        if (
-          typeof showToast ===
-          'function'
-        ) {
-
-          if (
-            routePotholes.length >
-            0
-          ) {
-
-            showToast(
-              `⚠️ ${routePotholes.length} pothole(s) detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route!`,
-              'warning'
-            );
-
-          } else {
-
-            showToast(
-              `✅ Route clear! No potholes detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route.`,
-              'success'
-            );
-          }
+        // Debounced Toast to prevent multi-firing
+        if (window._routeFoundToastTimer) {
+          clearTimeout(window._routeFoundToastTimer);
         }
+        window._routeFoundToastTimer = setTimeout(() => {
+          if (typeof showToast === 'function') {
+            if (routePotholes.length > 0) {
+              showToast(
+                `⚠️ ${routePotholes.length} pothole(s) detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route!`,
+                'warning'
+              );
+            } else {
+              showToast(
+                `✅ Route clear! No potholes detected within ${window.ROUTE_PROXIMITY_THRESHOLD_METERS}m of your route.`,
+                'success'
+              );
+            }
+          }
+        }, 300);
       }
     );
 

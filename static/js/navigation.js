@@ -864,9 +864,27 @@ window.selectAndNavigate = function(lat, lon, name) {
    PHASE 6 — UX Helpers: Toast Notifications
    ═══════════════════════════════════════════════════════════════════════ */
 
+let _navLastToastText = '';
+let _navLastToastTime = 0;
+
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
   if (!container) return;
+
+  const now = Date.now();
+  // Prevent duplicate spam within 2.5 seconds
+  if (message === _navLastToastText && (now - _navLastToastTime) < 2500) {
+    return;
+  }
+  _navLastToastText = message;
+  _navLastToastTime = now;
+
+  // Remove any currently visible toast so they never stack
+  const existingToasts = container.querySelectorAll('.toast, .nav-toast');
+  existingToasts.forEach(t => {
+    t.classList.remove('toast-visible');
+    t.remove();
+  });
 
   const toast = document.createElement('div');
   toast.className = `nav-toast nav-toast-${type}`;
@@ -879,9 +897,16 @@ function showToast(message, type = 'info') {
   // Remove after 3s
   setTimeout(() => {
     toast.classList.remove('toast-visible');
-    setTimeout(() => toast.remove(), 400);
+    setTimeout(() => {
+      toast.remove();
+      if (_navLastToastText === message) {
+        _navLastToastText = '';
+      }
+    }, 300);
   }, 3000);
 }
+
+window.showToast = showToast;
 
 /* ═══════════════════════════════════════════════════════════════════════
    ROUTING CONTROL HOOK — Extract route data after LRM routesfound

@@ -521,24 +521,24 @@ body {
 /* ── Enhanced Route Info Card ─────────────────────────────────────── */
 .route-info {
   position: absolute;
-  top: 14px;
+  top: 10px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(20px);
-  padding: 14px 20px;
-  border-radius: 18px;
-  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.15);
-  border: 1.5px solid rgba(5, 150, 105, 0.3);
+  padding: 8px 12px;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(5, 150, 105, 0.25);
   z-index: 1000;
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.78rem;
   display: none;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   color: var(--text-primary);
-  min-width: 320px;
-  max-width: 92vw;
+  min-width: 250px;
+  max-width: min(340px, 90vw);
   animation: slideDown 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -546,17 +546,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding-bottom: 4px;
 }
 
 .route-badge {
-  font-size: 0.85rem;
+  font-size: 0.76rem;
   font-weight: 800;
   color: var(--accent);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .btn-close-route {
@@ -564,9 +564,9 @@ body {
   border: none;
   cursor: pointer;
   color: var(--danger);
-  font-size: 1.1rem;
-  padding: 2px 6px;
-  border-radius: 6px;
+  font-size: 0.9rem;
+  padding: 1px 4px;
+  border-radius: 4px;
   transition: var(--transition);
 }
 
@@ -577,11 +577,11 @@ body {
 .route-details-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.02);
-  padding: 8px 12px;
-  border-radius: var(--radius-xs);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.025);
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .route-detail-item {
@@ -592,14 +592,15 @@ body {
 }
 
 .rd-label {
-  font-size: 0.68rem;
+  font-size: 0.58rem;
   color: var(--text-muted);
   text-transform: uppercase;
   font-weight: 700;
+  letter-spacing: 0.3px;
 }
 
 .rd-value {
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   font-weight: 800;
   color: var(--text-primary);
   font-family: 'JetBrains Mono', monospace;
@@ -608,38 +609,39 @@ body {
 .route-locations {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 0.78rem;
+  gap: 2px;
+  font-size: 0.7rem;
 }
 
 .loc-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   color: var(--text-secondary);
 }
 
 .loc-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .loc-dot.start {
   background: #06d6a0;
-  box-shadow: 0 0 6px rgba(6, 214, 160, 0.6);
+  box-shadow: 0 0 4px rgba(6, 214, 160, 0.6);
 }
 
 .loc-dot.dest {
   background: #2563eb;
-  box-shadow: 0 0 6px rgba(37, 99, 235, 0.6);
+  box-shadow: 0 0 4px rgba(37, 99, 235, 0.6);
 }
 
 .loc-label {
   font-weight: 700;
   color: var(--text-muted);
-  width: 75px;
+  width: 58px;
+  font-size: 0.68rem;
   flex-shrink: 0;
 }
 
@@ -650,12 +652,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  font-size: 0.7rem;
 }
 
 @keyframes slideDown {
   from {
     opacity: 0;
-    transform: translate(-50%, -20px);
+    transform: translate(-50%, -15px);
   }
 
   to {
@@ -1377,7 +1380,7 @@ body {
 /* ── Navigation Action Buttons (route-info bar) ─────────────────────── */
 .nav-btn-group {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -1385,39 +1388,39 @@ body {
 .btn-nav-start {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 18px;
-  border-radius: var(--radius-sm);
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 8px;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   cursor: pointer;
   border: none;
   font-family: inherit;
   background: linear-gradient(135deg, #059669, #10b981);
   color: #ffffff;
-  box-shadow: 0 3px 12px rgba(5,150,105,0.35);
+  box-shadow: 0 2px 8px rgba(5,150,105,0.3);
   transition: var(--transition);
 }
 
 .btn-nav-start:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(5,150,105,0.45);
+  box-shadow: 0 4px 14px rgba(5,150,105,0.4);
 }
 
 .btn-nav-stop {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 18px;
-  border-radius: var(--radius-sm);
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 8px;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   cursor: pointer;
   border: none;
   font-family: inherit;
   background: linear-gradient(135deg, #dc2626, #ef4444);
   color: #ffffff;
-  box-shadow: 0 3px 12px rgba(220,38,38,0.35);
+  box-shadow: 0 2px 8px rgba(220,38,38,0.3);
   transition: var(--transition);
 }
 
@@ -2068,37 +2071,40 @@ body.live-nav-active .pathole-warning-card {
 /* ── Toast Notifications ────────────────────────────────────────────── */
 #toast-container {
   position: fixed;
-  bottom: 100px;
-  right: 24px;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   pointer-events: none;
+  width: auto;
+  max-width: 90vw;
 }
 
 .toast,
 .nav-toast {
-  padding: 10px 18px;
+  padding: 8px 16px;
   border-radius: 10px;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
   font-family: 'Inter', sans-serif;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   opacity: 1;
-  transform: translateX(0);
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transform: translateY(0);
+  transition: opacity 0.25s ease, transform 0.25s ease;
   pointer-events: none;
-  max-width: 320px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 90vw;
+  text-align: center;
+  white-space: normal;
 }
 
 .toast.fade-out,
 .nav-toast:not(.toast-visible) {
   opacity: 0;
-  transform: translateX(30px);
+  transform: translateY(12px);
 }
 
 .toast-success,

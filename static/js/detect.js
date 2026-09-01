@@ -148,17 +148,36 @@ function clamp(val, min, max) {
     return Math.min(Math.max(val, min), max);
 }
 
+let _detectLastToastText = '';
+let _detectLastToastTime = 0;
+
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
+
+    const now = Date.now();
+    if (message === _detectLastToastText && (now - _detectLastToastTime) < 2500) {
+        return;
+    }
+    _detectLastToastText = message;
+    _detectLastToastTime = now;
+
+    const existingToasts = container.querySelectorAll('.toast, .nav-toast');
+    existingToasts.forEach(t => t.remove());
+
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.innerHTML = `<span>${message}</span>`;
     container.appendChild(toast);
     setTimeout(() => {
         toast.classList.add('fade-out');
-        setTimeout(() => toast.remove(), 400);
-    }, 3500);
+        setTimeout(() => {
+            toast.remove();
+            if (_detectLastToastText === message) {
+                _detectLastToastText = '';
+            }
+        }, 300);
+    }, 3000);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -925,11 +944,16 @@ window.getDirections = function(destLat, destLon) {
         const countEl = document.getElementById('route-potholes-count');
         if (countEl) countEl.textContent = routePotholes.length;
 
-        if (routePotholes.length > 0) {
-            showToast(`⚠️ ${routePotholes.length} pothole(s) detected near your route!`, 'warning');
-        } else {
-            showToast(`✅ Route clear! No potholes detected along this route.`, 'success');
+        if (window._detectRouteToastTimer) {
+            clearTimeout(window._detectRouteToastTimer);
         }
+        window._detectRouteToastTimer = setTimeout(() => {
+            if (routePotholes.length > 0) {
+                showToast(`⚠️ ${routePotholes.length} pothole(s) detected near your route!`, 'warning');
+            } else {
+                showToast(`✅ Route clear! No potholes detected along this route.`, 'success');
+            }
+        }, 300);
 
         const autoToggle = document.getElementById('auto-nav-toggle');
         if (autoToggle && autoToggle.checked && !NAV.isNavigating) {
