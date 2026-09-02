@@ -388,8 +388,21 @@ def report_pathole():
         return jsonify({'status': 'error', 'message': 'Invalid latitude or longitude coordinates'}), 400
 
     try:
+        # Determine severity from explicit input or acceleration peak
+        severity_input = str(data.get('severity', '')).lower().strip()
+        accel_peak = float(data.get('accel_peak', 0) or 0)
+
+        if severity_input in ['low', 'medium', 'high']:
+            detected_severity = severity_input
+        elif accel_peak >= 25:
+            detected_severity = 'high'
+        elif accel_peak >= 15:
+            detected_severity = 'medium'
+        else:
+            detected_severity = 'low'
+
         # Check if a pathole already exists nearby (within ~20 meters)
-        THRESHOLD = 0.0002  # roughly 20 meters
+        THRESHOLD = 0.0002  # roughly 20 meters (~0.0002 deg)
         existing = Pathole.query.filter(
             Pathole.latitude.between(lat - THRESHOLD, lat + THRESHOLD),
             Pathole.longitude.between(lng - THRESHOLD, lng + THRESHOLD),
@@ -400,17 +413,28 @@ def report_pathole():
             # Increase report count and confidence
             existing.report_count = (existing.report_count or 1) + 1
             existing.confidence = min(1.0, (existing.confidence or 0.5) + 0.1)
-            # Upgrade severity if reported many times
-            if existing.report_count >= 10:
+
+            # Upgrade peak acceleration if higher
+            if accel_peak > (existing.accel_peak or 0):
+                existing.accel_peak = accel_peak
+
+            # Upgrade severity if higher impact was detected or if reported frequently
+            severity_order = {'low': 1, 'medium': 2, 'high': 3}
+            current_level = severity_order.get(existing.severity, 1)
+            new_level = severity_order.get(detected_severity, 1)
+            if new_level > current_level:
+                existing.severity = detected_severity
+            elif existing.report_count >= 10:
                 existing.severity = 'high'
-            elif existing.report_count >= 5:
+            elif existing.report_count >= 5 and existing.severity != 'high':
                 existing.severity = 'medium'
+
             existing.updated_at = datetime.now(timezone.utc)
             db.session.commit()
 
             sync_to_turso(
-                "UPDATE pathole SET report_count = ?, confidence = ?, severity = ?, updated_at = ? WHERE id = ?",
-                [existing.report_count, existing.confidence, existing.severity, existing.updated_at.isoformat() if existing.updated_at else None, existing.id]
+                "UPDATE pathole SET report_count = ?, confidence = ?, severity = ?, accel_peak = ?, updated_at = ? WHERE id = ?",
+                [existing.report_count, existing.confidence, existing.severity, existing.accel_peak, existing.updated_at.isoformat() if existing.updated_at else None, existing.id]
             )
             _last_turso_pull_time = 0
 
@@ -420,18 +444,7 @@ def report_pathole():
                 'pathole': existing.to_dict()
             })
 
-        # Determine severity from explicit input or acceleration peak
-        severity_input = str(data.get('severity', '')).lower().strip()
-        accel_peak = float(data.get('accel_peak', 0) or 0)
-
-        if severity_input in ['low', 'medium', 'high']:
-            severity = severity_input
-        elif accel_peak >= 25:
-            severity = 'high'
-        elif accel_peak >= 15:
-            severity = 'medium'
-        else:
-            severity = 'low'
+        severity = detected_severity
 
         confidence_val = float(data.get('confidence', 0.6) or 0.6)
 
