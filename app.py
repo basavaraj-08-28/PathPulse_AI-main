@@ -12,6 +12,7 @@ import io
 import csv
 import shutil
 import json
+import math
 import urllib.request
 
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -370,6 +371,23 @@ def get_patholes():
     })
 
 
+def haversine_distance_meters(lat1, lon1, lat2, lon2):
+    """
+    Calculates the great-circle distance between two geographic coordinates in meters
+    using the spherical Haversine formula.
+    """
+    R = 6371000.0  # Earth's mean radius in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = (math.sin(delta_phi / 2.0) ** 2) + \
+        (math.cos(phi1) * math.cos(phi2) * (math.sin(delta_lambda / 2.0) ** 2))
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return R * c
+
+
 @app.route('/api/patholes', methods=['POST'])
 def report_pathole():
     """Report a new pathole detected by accelerometer or manual report (Admin only)"""
@@ -401,16 +419,31 @@ def report_pathole():
         else:
             detected_severity = 'low'
 
-        # Check if a pathole already exists nearby (within ~20 meters)
-        THRESHOLD = 0.0002  # roughly 20 meters (~0.0002 deg)
-        existing = Pathole.query.filter(
-            Pathole.latitude.between(lat - THRESHOLD, lat + THRESHOLD),
-            Pathole.longitude.between(lng - THRESHOLD, lng + THRESHOLD),
+        # Duplicate detection threshold:
+        # A single physical pothole has a localized GPS jitter radius of up to 3.0 meters.
+        # Two physically different potholes (even if 5m, 8m, 15m, 20m apart) are ALWAYS stored
+        # as separate records, preventing distinct close potholes from being incorrectly merged.
+        DUPLICATE_DISTANCE_THRESHOLD_METERS = 3.0
+
+        # Fast geographic bounding box pre-filter (~50 meters / ~0.0005 deg) to retrieve candidate active potholes
+        BOUND_BOX_DEG = 0.0005
+        candidates = Pathole.query.filter(
+            Pathole.latitude.between(lat - BOUND_BOX_DEG, lat + BOUND_BOX_DEG),
+            Pathole.longitude.between(lng - BOUND_BOX_DEG, lng + BOUND_BOX_DEG),
             Pathole.is_active == True
-        ).first()
+        ).all()
+
+        existing = None
+        min_distance = float('inf')
+        for cand in candidates:
+            dist = haversine_distance_meters(lat, lng, cand.latitude, cand.longitude)
+            if dist < DUPLICATE_DISTANCE_THRESHOLD_METERS and dist < min_distance:
+                min_distance = dist
+                existing = cand
 
         if existing:
-            # Increase report count and confidence
+            # Confirmed duplicate detection of the SAME physical pothole:
+            # Increment report count and scale confidence / severity
             existing.report_count = (existing.report_count or 1) + 1
             existing.confidence = min(1.0, (existing.confidence or 0.5) + 0.1)
 
@@ -441,6 +474,8 @@ def report_pathole():
             return jsonify({
                 'status': 'success',
                 'message': 'Existing pathole report updated',
+                'duplicate': True,
+                'distance_to_existing_m': round(min_distance, 2),
                 'pathole': existing.to_dict()
             })
 
@@ -810,9 +845,12 @@ def get_stats():
     """Get system statistics with breakdown details for visualization charts"""
     pull_from_turso()
 
-    total = Pathole.query.count()
+    total_unique = Pathole.query.count()
+    total_reports_sum = db.session.query(db.func.sum(Pathole.report_count)).scalar()
+    total = int(total_reports_sum) if total_reports_sum is not None else total_unique
+
     active = Pathole.query.filter_by(is_active=True).count()
-    resolved = total - active
+    resolved = total_unique - active
     high_severity = Pathole.query.filter_by(is_active=True, severity='high').count()
 
     # Severity distribution
@@ -826,12 +864,12 @@ def get_stats():
 
     daily_reports = db.session.query(
         db.func.date(Pathole.created_at).label('date_str'),
-        db.func.count(Pathole.id).label('cnt')
+        db.func.coalesce(db.func.sum(Pathole.report_count), db.func.count(Pathole.id)).label('cnt')
     ).filter(Pathole.created_at >= seven_days_ago)\
      .group_by(db.func.date(Pathole.created_at))\
      .order_by('date_str').all()
 
-    timeline = {str(row.date_str): row.cnt for row in daily_reports if row.date_str is not None}
+    timeline = {str(row.date_str): int(row.cnt) for row in daily_reports if row.date_str is not None}
 
     chart_labels = []
     chart_data = []
@@ -845,6 +883,7 @@ def get_stats():
         'status': 'success',
         'stats': {
             'total_reported': total,
+            'unique_patholes': total_unique,
             'active_patholes': active,
             'resolved': resolved,
             'high_severity': high_severity,

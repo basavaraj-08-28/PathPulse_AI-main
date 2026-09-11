@@ -1581,6 +1581,10 @@ window.getDirections =
       if (window.NAV) {
         window.NAV.currentRoute = route.coordinates;
         window.NAV.routeSteps = route.instructions || [];
+        if (route.summary) {
+          window.NAV.totalDistance = route.summary.totalDistance || 0;
+          window.NAV.totalTime = route.summary.totalTime || 0;
+        }
       }
 
       const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
@@ -1694,6 +1698,10 @@ window.selectAlternativeRoute = function(index) {
   if (window.NAV) {
     window.NAV.currentRoute = route.coordinates;
     window.NAV.routeSteps = route.instructions || [];
+    if (route.summary) {
+      window.NAV.totalDistance = route.summary.totalDistance || 0;
+      window.NAV.totalTime = route.summary.totalTime || 0;
+    }
   }
 
   const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);

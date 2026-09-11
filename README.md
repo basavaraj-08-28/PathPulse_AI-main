@@ -9,7 +9,7 @@ PathPulse AI is a modern, real-time web application designed to automatically de
 *   **Real-time Sensor Processing:** Uses browser-level accelerometer access (`DeviceMotionEvent`) to calculate instantaneous vertical acceleration changes.
 *   **Intelligent Severity Mapping:** Automatically categorizes road damage severity (Low, Medium, High) based on peak acceleration spikes (m/s²).
 *   **GPS-driven Heatmaps:** Displays patholes on an interactive leaflet map with dynamic markers and popup overlays.
-*   **Smart Clustering & Deduplication:** Avoids duplicate reports. Detections within a 20-meter threshold of an existing pathole increment its confidence score and count rather than creating new pins.
+*   **Smart Clustering & Deduplication:** Distinguishes repeated sensor impacts on the same physical pothole (within ~3m GPS precision) to increment report counts and confidence scores, while always storing distinct consecutive potholes (even if 5m, 8m, 15m, or 20m apart) as separate database records.
 *   **Routing & Directions:** Integration with Leaflet Routing Machine to calculate route distances and display alternative pathways avoiding high-impact patholes.
 *   **Integrated Location Search:** Search places and get routing using the Komoot Photon geocoder API.
 *   **Interactive Simulation Fallback:** Safe desktop fallback simulator that automatically generates random road noise and occasional pathole spikes for testing and validation.
@@ -70,11 +70,12 @@ where $g \approx 9.81 \text{ m/s}^2$ representing the baseline acceleration due 
 *   **Medium Impact:** $15 \text{ m/s}^2 \le \text{Deviation} < 25 \text{ m/s}^2$
 *   **High Impact (Dangerous):** $\text{Deviation} \ge 25 \text{ m/s}^2$
 
-### 2. Proximity Clustering
-To prevent map spamming:
-*   When a pathole is detected at $(Lat, Lng)$, the server checks if another active pathole exists within a threshold range of `0.0002` coordinates (approximately 20 meters).
-*   If found, the server updates the existing pathole record, increasing the count: `report_count += 1` and scaling confidence: `confidence = min(1.0, confidence + 0.1)`.
-*   If the pathole is reported more than 5 times, it is upgraded to **Medium** severity. More than 10 times is upgraded to **High** severity.
+### 2. Precise Spatial Deduplication & Separate Pothole Storage
+To prevent duplicate records while preserving every distinct physical road defect:
+*   When a pothole is detected at $(Lat, Lng)$, the server computes the exact Haversine distance to all nearby active potholes.
+*   **Same Physical Pothole ($< 3.0$ meters):** If a detection falls within the GPS variance radius of an existing pothole, the server updates that record, increasing `report_count += 1`, scaling confidence: `confidence = min(1.0, confidence + 0.1)`, and upgrading severity if higher impacts are recorded.
+*   **Distinct Physical Potholes ($\ge 3.0$ meters):** Two potholes separated by 5 meters, 8 meters, 15 meters, or 20+ meters are always stored as completely independent database records.
+*   If a pothole is reported more than 5 times, it is upgraded to **Medium** severity. More than 10 times is upgraded to **High** severity.
 
 ---
 

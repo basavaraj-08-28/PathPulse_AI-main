@@ -36,6 +36,8 @@ const NAV = {
   lastCameraLon:      null,
   cameraUpdateTime:   0,
   markerAnimFrame:    null,
+  totalDistance:      0,        // metres (from OSRM route summary)
+  totalTime:          0,        // seconds (from OSRM route summary)
 };
 
 let isCourseUpMode = true;
@@ -503,8 +505,13 @@ function _extractRouteData() {
   if (!window.routingControl) return;
   const waypointLayer = window.routingControl._routes;
   if (waypointLayer && waypointLayer.length > 0) {
-    NAV.currentRoute = waypointLayer[0].coordinates;
-    NAV.routeSteps   = waypointLayer[0].instructions || [];
+    const route = (window.allComputedRoutes && typeof window.selectedRouteIndex === 'number' && window.allComputedRoutes[window.selectedRouteIndex]) ? window.allComputedRoutes[window.selectedRouteIndex] : waypointLayer[0];
+    NAV.currentRoute = route.coordinates;
+    NAV.routeSteps   = route.instructions || [];
+    if (route.summary) {
+      NAV.totalDistance = route.summary.totalDistance || 0;
+      NAV.totalTime     = route.summary.totalTime || 0;
+    }
   }
 }
 
@@ -535,9 +542,18 @@ function updateLiveNavUI(lat, lng, accuracy) {
     : Math.round(remainingMeters) + ' m';
 
   // 4. Format ETA (minutes and hours)
-  const currentSpeedNum = parseFloat(NAV.currentSpeed);
-  const speedKmh = (currentSpeedNum > 5) ? currentSpeedNum : 35; // default urban speed
-  const etaMins = Math.max(1, Math.round((remainingMeters / 1000) / speedKmh * 60));
+  let etaMins = 1;
+  if (NAV.totalDistance && NAV.totalTime && NAV.totalDistance > 0) {
+    // Dynamically calculate remaining travel time based on accurate OSRM route speed profile
+    const remainingRatio = Math.max(0, Math.min(1.5, remainingMeters / NAV.totalDistance));
+    const remainingSeconds = remainingRatio * NAV.totalTime;
+    etaMins = Math.max(1, Math.round(remainingSeconds / 60));
+  } else {
+    // Fallback if route summary was unavailable (default 60 km/h highway/urban mix)
+    const currentSpeedNum = parseFloat(NAV.currentSpeed);
+    const speedKmh = (currentSpeedNum > 15) ? currentSpeedNum : 60;
+    etaMins = Math.max(1, Math.round((remainingMeters / 1000) / speedKmh * 60));
+  }
   const etaStr = etaMins >= 60
     ? Math.floor(etaMins / 60) + 'h ' + (etaMins % 60) + 'm'
     : etaMins + ' min';
@@ -717,6 +733,10 @@ function checkRouteDeviation(lat, lng) {
       if (routes && routes.length > 0) {
         NAV.currentRoute     = routes[0].coordinates;
         NAV.routeSteps       = routes[0].instructions || [];
+        if (routes[0].summary) {
+          NAV.totalDistance  = routes[0].summary.totalDistance || 0;
+          NAV.totalTime      = routes[0].summary.totalTime || 0;
+        }
         NAV.currentStepIndex = 0;
         NAV.spokenInstructions.clear();
         clearInterval(checkInterval);

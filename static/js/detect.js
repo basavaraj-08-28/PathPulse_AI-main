@@ -18,8 +18,11 @@ let isDetecting = false;
 let watchId = null;
 let detectionCount = 0;
 let lastReportTime = 0;
+let lastReportedLat = null;
+let lastReportedLng = null;
 
-const REPORT_COOLDOWN = 2000; // milliseconds
+const REPORT_COOLDOWN = 2000; // milliseconds for same-spot / stationary debounce
+const MIN_EVENT_SEPARATION_MS = 300; // milliseconds minimum between distinct road events
 const PATHOLE_THRESHOLD = 18; // m/s² acceleration spike
 const GRAVITY = 9.81;
 const ROUTE_PROXIMITY_THRESHOLD_METERS = 30; // metres
@@ -71,6 +74,8 @@ const NAV = {
     lastCameraLon: null,
     cameraUpdateTime: 0,
     markerAnimFrame: null,
+    totalDistance: 0,
+    totalTime: 0,
 };
 
 let navMarker = null;
@@ -701,8 +706,25 @@ function processAccelData(x, y, z, isLinear = false) {
         console.log(`[PathPulse] DeviceMotion:\nX: ${x.toFixed(2)}\nY: ${y.toFixed(2)}\nZ: ${z.toFixed(2)}\nMagnitude: ${magnitude.toFixed(2)}`);
     }
 
-    if (deviation > PATHOLE_THRESHOLD && now - lastReportTime > REPORT_COOLDOWN) {
+    const timeSinceLast = now - lastReportTime;
+    let distFromLast = Infinity;
+    if (lastReportedLat !== null && lastReportedLng !== null && currentPosition) {
+        distFromLast = haversineMeters(lastReportedLat, lastReportedLng, currentPosition.lat, currentPosition.lng);
+    }
+
+    // Smart Event Separation:
+    // If the vehicle has moved to a new physical location (>= 3.0 meters away),
+    // allow detection with minimal event separation (300ms) to capture consecutive potholes (e.g. 5m, 8m, 15m apart).
+    // If the vehicle has NOT moved (< 3.0m, e.g. stationary noise / ringing), debounce for 2000ms.
+    const isNewLocation = distFromLast >= 3.0;
+    const isAllowed = isNewLocation ? (timeSinceLast >= MIN_EVENT_SEPARATION_MS) : (timeSinceLast >= REPORT_COOLDOWN);
+
+    if (deviation > PATHOLE_THRESHOLD && isAllowed) {
         lastReportTime = now;
+        if (currentPosition) {
+            lastReportedLat = currentPosition.lat;
+            lastReportedLng = currentPosition.lng;
+        }
         onPatholeDetected(deviation);
     }
 }
@@ -729,6 +751,11 @@ async function onPatholeDetected(accelPeak, overrideData = null) {
         return;
     }
 
+    // Update last reported position state
+    lastReportedLat = lat;
+    lastReportedLng = lng;
+    lastReportTime = Date.now();
+
     let severity = overrideData && overrideData.severity 
         ? overrideData.severity.toLowerCase() 
         : (accelPeak >= 25 ? "high" : accelPeak >= 15 ? "medium" : "low");
@@ -751,6 +778,7 @@ async function onPatholeDetected(accelPeak, overrideData = null) {
         accel_peak: accelPeak,
         confidence: Math.min(1.0, Math.max(0.6, accelPeak / 30)),
         accuracy: accuracy || null,
+        speed: (NAV && NAV.currentSpeed) ? parseFloat(NAV.currentSpeed) : null,
         reported_by: "Admin",
         created_at: new Date().toISOString()
     };
@@ -774,8 +802,12 @@ async function onPatholeDetected(accelPeak, overrideData = null) {
         }
         
         const result = await response.json();
-        console.log("[PathPulse] Pothole stored in database successfully:", result);
-        showToast(`✅ Pothole (${severity.toUpperCase()}) saved to database!`, "success");
+        console.log("[PathPulse] Pothole API response:", result);
+        if (result.duplicate) {
+            showToast(`🔄 Existing Pothole updated (+1 report, ${(result.distance_to_existing_m !== undefined ? result.distance_to_existing_m + 'm' : 'same spot')})`, "info");
+        } else {
+            showToast(`✅ Pothole (${severity.toUpperCase()}) saved to database!`, "success");
+        }
         loadExistingPatholes();
     } catch (error) {
         console.warn("[PathPulse] Server upload failed. Saving offline.", error);
@@ -980,6 +1012,10 @@ window.getDirections = function(destLat, destLon) {
 
         NAV.currentRoute = route.coordinates;
         NAV.routeSteps = route.instructions || [];
+        if (route.summary) {
+            NAV.totalDistance = route.summary.totalDistance || 0;
+            NAV.totalTime = route.summary.totalTime || 0;
+        }
 
         const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
         const travelTimeMin = Math.round(route.summary.totalTime / 60);
@@ -1079,6 +1115,10 @@ window.selectAlternativeRoute = function(index) {
 
     NAV.currentRoute = route.coordinates;
     NAV.routeSteps = route.instructions || [];
+    if (route.summary) {
+        NAV.totalDistance = route.summary.totalDistance || 0;
+        NAV.totalTime = route.summary.totalTime || 0;
+    }
 
     const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
     const travelTimeMin = Math.round(route.summary.totalTime / 60);
@@ -1511,9 +1551,16 @@ function updateLiveNavUI(lat, lng, accuracy) {
         : Math.round(remainingMeters) + ' m';
 
     // 4. Format ETA (minutes and hours)
-    const currentSpeedNum = parseFloat(NAV.currentSpeed);
-    const speedKmh = (currentSpeedNum > 5) ? currentSpeedNum : 35; // default urban speed
-    const etaMins = Math.max(1, Math.round((remainingMeters / 1000) / speedKmh * 60));
+    let etaMins = 1;
+    if (NAV.totalDistance && NAV.totalTime && NAV.totalDistance > 0) {
+        const remainingRatio = Math.max(0, Math.min(1.5, remainingMeters / NAV.totalDistance));
+        const remainingSeconds = remainingRatio * NAV.totalTime;
+        etaMins = Math.max(1, Math.round(remainingSeconds / 60));
+    } else {
+        const currentSpeedNum = parseFloat(NAV.currentSpeed);
+        const speedKmh = (currentSpeedNum > 15) ? currentSpeedNum : 60;
+        etaMins = Math.max(1, Math.round((remainingMeters / 1000) / speedKmh * 60));
+    }
     const etaStr = etaMins >= 60
         ? Math.floor(etaMins / 60) + 'h ' + (etaMins % 60) + 'm'
         : etaMins + ' min';
