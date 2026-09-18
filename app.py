@@ -266,6 +266,14 @@ class Pathole(db.Model):
         reporter_name = self.reported_by or 'Admin'
         if reporter_name.strip().lower() in ['anonymous', 'user', 'none', '']:
             reporter_name = 'Admin'
+
+        def _format_iso(dt):
+            if not dt:
+                return None
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc).isoformat()
+            return dt.astimezone(timezone.utc).isoformat()
+
         return {
             'id': self.id,
             'latitude': self.latitude,
@@ -275,8 +283,8 @@ class Pathole(db.Model):
             'reported_by': reporter_name,
             'report_count': self.report_count,
             'accel_peak': self.accel_peak,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'created_at': _format_iso(self.created_at),
+            'updated_at': _format_iso(self.updated_at),
             'is_active': self.is_active
         }
 
@@ -487,13 +495,26 @@ def report_pathole():
         if reporter_name.strip().lower() in ['anonymous', 'user', 'none', '']:
             reporter_name = 'Admin'
 
+        client_created_at = None
+        if data.get('created_at'):
+            try:
+                client_created_at = datetime.fromisoformat(str(data['created_at']).replace("Z", "+00:00"))
+                if client_created_at.tzinfo is None:
+                    client_created_at = client_created_at.replace(tzinfo=timezone.utc)
+            except Exception:
+                client_created_at = datetime.now(timezone.utc)
+        else:
+            client_created_at = datetime.now(timezone.utc)
+
         pathole = Pathole(
             latitude=lat,
             longitude=lng,
             severity=severity,
             confidence=confidence_val,
             reported_by=reporter_name,
-            accel_peak=accel_peak
+            accel_peak=accel_peak,
+            created_at=client_created_at,
+            updated_at=client_created_at
         )
         db.session.add(pathole)
         db.session.commit()

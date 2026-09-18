@@ -738,12 +738,17 @@ function createPatholeMarker(
     );
 
 
-  const date =
-    pathole.created_at
-      ? new Date(
-          pathole.created_at
-        ).toLocaleString()
-      : 'Unknown';
+  let date = 'Unknown';
+  if (pathole.created_at) {
+    let dtStr = pathole.created_at;
+    if (typeof dtStr === 'string' && !dtStr.endsWith('Z') && !dtStr.includes('+') && !dtStr.includes('-', 10)) {
+      dtStr += 'Z';
+    }
+    const parsed = new Date(dtStr);
+    if (!isNaN(parsed.getTime())) {
+      date = parsed.toLocaleString();
+    }
+  }
 
 
   let distText = '';

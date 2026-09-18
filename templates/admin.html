@@ -516,7 +516,17 @@
         if (countEl) countEl.textContent = data.patholes.length;
         
         data.patholes.forEach(p => {
-          const date = new Date(p.created_at).toLocaleString();
+          let date = 'Unknown';
+          if (p.created_at) {
+            let dtStr = p.created_at;
+            if (typeof dtStr === 'string' && !dtStr.endsWith('Z') && !dtStr.includes('+') && !dtStr.includes('-', 10)) {
+              dtStr += 'Z';
+            }
+            const parsed = new Date(dtStr);
+            if (!isNaN(parsed.getTime())) {
+              date = parsed.toLocaleString();
+            }
+          }
           const tr = document.createElement('tr');
           tr.id = `row-${p.id}`;
           
