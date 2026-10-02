@@ -369,28 +369,22 @@ window.filterMarkers = function() {
   /*
    * USER SPECIFICATION:
    * 1. Browse / preview mode: Keep map clean (potholes hidden).
-   * 2. Live Navigation mode: Render distinct HIGH (🔴), MED (🟡), LOW (🟢) 3D pins along route!
+   * 2. Live Navigation mode: Render clean circular dot markers (🔴 HIGH, 🟠 MED, 🟢 LOW) directly along route.
    */
   const isNavigating = typeof NAV !== 'undefined' && NAV.isNavigating;
   if (isNavigating && routePotholes.length > 0 && map) {
     routePotholes.forEach(p => {
       const markerEl = document.createElement('div');
-      markerEl.className = 'pothole-3d-pin-wrap';
       const sev = (p.severity || 'medium').toLowerCase();
-      const icon = sev === 'high' ? '⚠️' : (sev === 'medium' ? '⚠️' : 'ℹ️');
+      markerEl.className = `pothole-dot-marker severity-${sev}`;
+      markerEl.title = `${sev.toUpperCase()} Severity Pothole`;
+
       const tag = sev === 'high' ? 'HIGH' : (sev === 'medium' ? 'MED' : 'LOW');
+      const emoji = sev === 'high' ? '🔴' : (sev === 'medium' ? '🟠' : '🟢');
 
-      markerEl.innerHTML = `
-        <div class="pothole-3d-pin severity-${sev}" title="${tag} Pothole">
-          <span>${icon}</span>
-          <span>${tag}</span>
-        </div>
-        <div class="pin-pointer"></div>
-      `;
-
-      const popup = new maplibregl.Popup({ offset: [0, -18] }).setHTML(`
+      const popup = new maplibregl.Popup({ offset: [0, -10] }).setHTML(`
         <div style="font-weight:700;font-size:0.95rem;margin-bottom:4px;">
-          ${sev === 'high' ? '🔴' : (sev === 'medium' ? '🟡' : '🟢')} ${tag} Severity Pothole
+          ${emoji} ${tag} Severity Pothole
         </div>
         <div style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:${SEVERITY_COLORS[sev] || '#f59e0b'};">
           ${sev.toUpperCase()} Threat Level
@@ -402,7 +396,7 @@ window.filterMarkers = function() {
         </div>
       `);
 
-      const marker = new maplibregl.Marker({ element: markerEl, anchor: 'bottom' })
+      const marker = new maplibregl.Marker({ element: markerEl, anchor: 'center' })
         .setLngLat([p.longitude, p.latitude])
         .setPopup(popup)
         .addTo(map);
