@@ -1216,18 +1216,10 @@ function getForwardRouteBearing(lat, lng) {
         targetIdx = i + 1;
         if (accumulatedDist >= 35) break;
     }
-    let pFrom = NAV.currentRoute[idx];
-    let pTo = NAV.currentRoute[targetIdx];
+    const pFrom = NAV.currentRoute[idx];
+    const pTo = NAV.currentRoute[targetIdx];
     if (!pFrom || !pTo || (pFrom.lat === pTo.lat && pFrom.lng === pTo.lng)) {
-        if (idx > 0 && NAV.currentRoute[idx - 1]) {
-            pFrom = NAV.currentRoute[idx - 1];
-            pTo = NAV.currentRoute[idx];
-        } else if (NAV.currentRoute.length >= 2) {
-            pFrom = NAV.currentRoute[0];
-            pTo = NAV.currentRoute[1];
-        } else {
-            return 0;
-        }
+        return 0;
     }
     return calculateBearing(pFrom.lat, pFrom.lng, pTo.lat, pTo.lng);
 }
@@ -1426,16 +1418,15 @@ window.startNavigation = function(destLat, destLon, destName) {
     // 5. Invalidate Leaflet map size smoothly and orient camera forward along road
     requestAnimationFrame(() => {
         map.invalidateSize({ pan: false });
-        const startPos = currentPosition || (NAV.currentRoute && NAV.currentRoute.length > 0 ? { lat: NAV.currentRoute[0].lat, lng: NAV.currentRoute[0].lng, accuracy: 10 } : null);
-        if (startPos) {
-            NAV.lastCameraLat = startPos.lat;
-            NAV.lastCameraLon = startPos.lng;
+        if (currentPosition) {
+            NAV.lastCameraLat = currentPosition.lat;
+            NAV.lastCameraLon = currentPosition.lng;
             NAV.cameraUpdateTime = Date.now();
-            map.setView([startPos.lat, startPos.lng], 18, { animate: false });
-            const initBearing = getForwardRouteBearing(startPos.lat, startPos.lng);
+            map.setView([currentPosition.lat, currentPosition.lng], 18, { animate: false });
+            const initBearing = getForwardRouteBearing(currentPosition.lat, currentPosition.lng);
             setMapOrientation(initBearing, false);
-            updateNavMarker(startPos.lat, startPos.lng, initBearing);
-            updateLiveNavUI(startPos.lat, startPos.lng, startPos.accuracy);
+            updateNavMarker(currentPosition.lat, currentPosition.lng, initBearing);
+            updateLiveNavUI(currentPosition.lat, currentPosition.lng, currentPosition.accuracy);
         }
     });
 

@@ -69,18 +69,10 @@ function getForwardRouteBearing(lat, lng) {
     targetIdx = i + 1;
     if (accumulatedDist >= 35) break;
   }
-  let pFrom = NAV.currentRoute[idx];
-  let pTo = NAV.currentRoute[targetIdx];
+  const pFrom = NAV.currentRoute[idx];
+  const pTo = NAV.currentRoute[targetIdx];
   if (!pFrom || !pTo || (pFrom.lat === pTo.lat && pFrom.lng === pTo.lng)) {
-    if (idx > 0 && NAV.currentRoute[idx - 1]) {
-      pFrom = NAV.currentRoute[idx - 1];
-      pTo = NAV.currentRoute[idx];
-    } else if (NAV.currentRoute.length >= 2) {
-      pFrom = NAV.currentRoute[0];
-      pTo = NAV.currentRoute[1];
-    } else {
-      return 0;
-    }
+    return 0;
   }
   return calculateBearing(pFrom.lat, pFrom.lng, pTo.lat, pTo.lng);
 }
@@ -260,20 +252,6 @@ window.startNavigation = function(destLat, destLon, destName) {
     const pText = document.getElementById('live-pause-text');
     if (pIcon) pIcon.textContent = '⏸';
     if (pText) pText.textContent = 'Pause Navigation';
-  }
-
-  // Ensure a valid starting location from GPS or route beginning
-  if (!NAV.lastLat || !NAV.lastLon) {
-    if (typeof lastKnownGPSPosition !== 'undefined' && lastKnownGPSPosition) {
-      NAV.lastLat = lastKnownGPSPosition.latitude;
-      NAV.lastLon = lastKnownGPSPosition.longitude;
-    } else if (window.lastKnownGPSPosition) {
-      NAV.lastLat = window.lastKnownGPSPosition.latitude;
-      NAV.lastLon = window.lastKnownGPSPosition.longitude;
-    } else if (NAV.currentRoute && NAV.currentRoute.length > 0) {
-      NAV.lastLat = NAV.currentRoute[0].lat;
-      NAV.lastLon = NAV.currentRoute[0].lng;
-    }
   }
 
   // 4. Invalidate Leaflet map size smoothly and orient camera forward along road
