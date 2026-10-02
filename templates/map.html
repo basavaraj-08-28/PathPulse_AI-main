@@ -364,17 +364,6 @@
           </div>
         </div>
 
-        <!-- Advance Potholes Ahead Preview (Shows all upcoming potholes before driving) -->
-        <div id="route-advance-potholes-container" class="route-advance-potholes-container" style="display:none;">
-          <div class="rap-header">
-            <span class="rap-title">⚠️ Upcoming Potholes Ahead</span>
-            <span class="rap-badge" id="rap-badge">0 Hazards</span>
-          </div>
-          <div id="route-potholes-ahead-list" class="route-potholes-ahead-list">
-            <!-- Populated dynamically with clickable advance pothole cards -->
-          </div>
-        </div>
-
         <!-- Navigation action buttons -->
         <div class="nav-btn-group" style="margin-top: 4px; justify-content: flex-end;">
           <button class="btn-nav-start" id="btn-start-nav" onclick="startNavigation()" style="display:none;"
@@ -413,7 +402,7 @@
       <!-- 2. Floating Speedometer Indicator (Bottom-Left) -->
       <div id="live-nav-speed-badge" class="live-nav-speed-badge" style="display:none;">
         <span class="speed-val" id="live-nav-speed-val">--</span>
-        <span class="speed-unit">km/h</span>
+        <span class="speed-unit">KM/H</span>
       </div>
 
       <!-- 3. Floating Right-Side Controls (Compass -> Recenter) -->
@@ -434,8 +423,6 @@
             <span id="live-nav-dist-remain">-- km</span>
             <span class="metric-dot">•</span>
             <span id="live-nav-arrival-time">--:--</span>
-            <span class="metric-dot" id="live-nav-hazard-dot" style="display:none;">•</span>
-            <span id="live-nav-next-hazard" style="display:none; color:#f87171; font-weight:800;"></span>
           </div>
         </div>
         <div class="live-nav-bottom-actions">

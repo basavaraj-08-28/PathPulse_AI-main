@@ -2940,14 +2940,14 @@ body.live-nav-active .pathole-warning-card {
 /* ── Circular Pothole Markers on Navigation & Live Map ─────────────────── */
 .pothole-circle-marker-wrap {
   position: relative;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 60;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   user-select: none;
 }
 
@@ -2964,59 +2964,53 @@ body.live-nav-active .pathole-warning-card {
 }
 
 .pothole-circle-core {
-  width: 24px;
-  height: 24px;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
   position: relative;
   z-index: 2;
-  font-size: 11px;
-  font-weight: 800;
-  color: #ffffff;
-  line-height: 1;
+  box-sizing: border-box;
 }
 
 /* HIGH SEVERITY: RED CIRCLE */
 .pothole-circle-marker-wrap.severity-high .pothole-circle-core {
-  background: radial-gradient(circle at 35% 35%, #ff4d4f, #dc2626);
-  border-color: #ffffff;
-  box-shadow: 0 0 16px rgba(239, 68, 68, 0.95), 0 3px 8px rgba(0, 0, 0, 0.45);
+  width: 22px;
+  height: 22px;
+  background: #ef4444;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.8), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .pothole-circle-marker-wrap.severity-high .pothole-circle-pulse {
-  background: rgba(239, 68, 68, 0.4);
-  animation: potholePulseRed 1.6s infinite ease-out;
+  background: rgba(239, 68, 68, 0.35);
+  animation: potholePulseRed 1.8s infinite ease-out;
 }
 
 @keyframes potholePulseRed {
   0% {
     transform: scale(0.6);
-    opacity: 0.95;
+    opacity: 0.9;
   }
   65% {
-    transform: scale(1.9);
+    transform: scale(1.8);
     opacity: 0.2;
   }
   100% {
-    transform: scale(2.4);
+    transform: scale(2.3);
     opacity: 0;
   }
 }
 
 /* MEDIUM SEVERITY: ORANGE CIRCLE */
 .pothole-circle-marker-wrap.severity-medium .pothole-circle-core {
-  background: radial-gradient(circle at 35% 35%, #fbbf24, #d97706);
-  border-color: #ffffff;
-  box-shadow: 0 0 14px rgba(245, 158, 11, 0.85), 0 3px 8px rgba(0, 0, 0, 0.35);
+  width: 17px;
+  height: 17px;
+  background: #f97316;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.7), 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 .pothole-circle-marker-wrap.severity-medium .pothole-circle-pulse {
-  background: rgba(245, 158, 11, 0.35);
-  animation: potholePulseOrange 2.0s infinite ease-out;
+  background: rgba(249, 115, 22, 0.3);
+  animation: potholePulseOrange 2.2s infinite ease-out;
 }
 
 @keyframes potholePulseOrange {
@@ -3036,28 +3030,27 @@ body.live-nav-active .pathole-warning-card {
 
 /* LOW SEVERITY: GREEN CIRCLE */
 .pothole-circle-marker-wrap.severity-low {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 .pothole-circle-marker-wrap.severity-low .pothole-circle-core {
-  width: 18px;
-  height: 18px;
-  background: radial-gradient(circle at 35% 35%, #34d399, #059669);
-  border: 2px solid #ffffff;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.7), 0 2px 5px rgba(0, 0, 0, 0.3);
-  font-size: 9px;
+  width: 12px;
+  height: 12px;
+  background: #10b981;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6), 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 .pothole-circle-marker-wrap.severity-low .pothole-circle-pulse {
-  background: rgba(16, 185, 129, 0.3);
-  animation: potholePulseGreen 2.5s infinite ease-out;
+  background: rgba(16, 185, 129, 0.25);
+  animation: potholePulseGreen 2.8s infinite ease-out;
 }
 
 @keyframes potholePulseGreen {
   0% {
     transform: scale(0.6);
-    opacity: 0.75;
+    opacity: 0.7;
   }
   100% {
     transform: scale(1.8);
@@ -3159,22 +3152,22 @@ body.live-nav-active .pathole-warning-card {
   padding: 5px 10px;
 }
 
-/* ── Live Navigation Warning Card (Yellow / Red Banner matching UX) ── */
+/* ── Live Navigation Warning Card (Yellow Alert Box matching screenshot) ── */
 .pathole-warning-card {
   position: absolute;
-  top: calc(90px + env(safe-area-inset-top, 0px));
+  top: calc(96px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%) translateY(-10px);
   z-index: 1210;
   display: none;
   align-items: center;
   gap: 14px;
-  background: #fffbeb !important;
-  border: 2px solid #fde047 !important;
+  background: #fef9c3 !important;
+  border: 2px solid #facc15 !important;
   border-radius: 16px;
-  padding: 10px 22px;
-  box-shadow: 0 8px 24px rgba(217, 119, 6, 0.2), 0 2px 6px rgba(0, 0, 0, 0.08);
-  min-width: 220px;
+  padding: 8px 18px;
+  box-shadow: 0 8px 24px rgba(202, 138, 4, 0.22), 0 2px 6px rgba(0, 0, 0, 0.08);
+  min-width: 210px;
   max-width: 88vw;
   opacity: 0;
   transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -3183,22 +3176,6 @@ body.live-nav-active .pathole-warning-card {
 .pathole-warning-card.pw-visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
-}
-
-.pathole-warning-card.severity-high {
-  background: #fef2f2 !important;
-  border: 2px solid #f87171 !important;
-  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.3), 0 2px 6px rgba(0, 0, 0, 0.1);
-}
-
-.pathole-warning-card.severity-high .pw-title {
-  color: #991b1b;
-}
-
-.pathole-warning-card.severity-high .pw-subtitle,
-.pathole-warning-card.severity-high .pw-action {
-  color: #b91c1c;
-  font-weight: 800;
 }
 
 .pathole-warning-card .pw-icon {
@@ -3221,14 +3198,13 @@ body.live-nav-active .pathole-warning-card {
   align-items: center;
   gap: 6px;
   font-weight: 800;
-  font-size: 0.96rem;
+  font-size: 0.95rem;
   color: #713f12;
   white-space: nowrap;
   letter-spacing: -0.01em;
 }
 
-.pathole-warning-card .pw-subtitle,
-.pathole-warning-card .pw-action {
+.pathole-warning-card .pw-subtitle {
   font-weight: 800;
   font-size: 0.92rem;
   color: #713f12;
@@ -3236,13 +3212,15 @@ body.live-nav-active .pathole-warning-card {
 }
 
 .pathole-warning-card .pw-dist {
-  font-size: 0.84rem;
-  color: #8c7750;
+  font-size: 0.85rem;
+  color: #78716c;
   font-family: 'Courier New', Courier, monospace;
   font-weight: 600;
-  margin-top: 3px;
+  margin-top: 2px;
   letter-spacing: 0.5px;
 }
+
+
 
 /* ── Destination Marker 3D / Premium Pin ─────────────────────────── */
 .dest-marker-root {

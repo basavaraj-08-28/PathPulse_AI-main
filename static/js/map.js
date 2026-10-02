@@ -358,16 +358,11 @@ window.filterMarkers = function() {
   const activeRouteCoords = currentRouteCoordinates || (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
 
   let routePotholes = [];
-  const onRoutePotholeMap = new Map();
-
   if (activeRouteCoords && activeRouteCoords.length > 0) {
     routePotholes = filterPotholesAlongRoute(
       activeRouteCoords,
       window.ROUTE_PROXIMITY_THRESHOLD_METERS
     );
-    routePotholes.forEach(p => {
-      onRoutePotholeMap.set(p.id, p);
-    });
   }
 
   const countEl = document.getElementById('route-potholes-count');
@@ -376,7 +371,6 @@ window.filterMarkers = function() {
   }
 
   updateRoadConditionUI(routePotholes);
-  renderAdvancePotholesPreview(routePotholes);
 
   if (!map || !allPatholesData || allPatholesData.length === 0) return;
 
@@ -387,31 +381,16 @@ window.filterMarkers = function() {
     if (sev === 'medium' && !showMed) return;
     if (sev === 'high' && !showHigh) return;
 
-    const isOnRoute = onRoutePotholeMap.has(p.id);
-    const routePotholeData = onRoutePotholeMap.get(p.id);
-
     // Create custom DOM circle marker element
     const el = document.createElement('div');
-    el.className = `pothole-circle-marker-wrap severity-${sev} ${isOnRoute ? 'on-route-hazard' : ''}`;
+    el.className = `pothole-circle-marker-wrap severity-${sev}`;
     el.setAttribute('data-id', p.id);
     el.setAttribute('data-severity', sev);
-    el.setAttribute('title', `${sev.toUpperCase()} Severity Pothole #${p.id} — Slow down vehicle`);
-
-    const iconSymbol = sev === 'high' ? '⚠️' : (sev === 'medium' ? '⚠️' : '•');
-    
-    let distTagHtml = '';
-    if (isOnRoute && routePotholeData && routePotholeData.distanceFromStartMeters !== undefined) {
-      const dMeters = routePotholeData.distanceFromStartMeters;
-      const dLabel = dMeters >= 1000 ? `${(dMeters / 1000).toFixed(1)}km` : `${Math.round(dMeters)}m`;
-      distTagHtml = `<div class="pothole-distance-tag">Ahead ${dLabel}</div>`;
-    }
+    el.setAttribute('title', `${sev.toUpperCase()} Severity Pothole #${p.id} — Slow down`);
 
     el.innerHTML = `
-      ${distTagHtml}
       <div class="pothole-circle-pulse"></div>
-      <div class="pothole-circle-core">
-        <span class="pothole-circle-icon">${iconSymbol}</span>
-      </div>
+      <div class="pothole-circle-core"></div>
     `;
 
     // Severity specific popup presentation
@@ -437,11 +416,6 @@ window.filterMarkers = function() {
           <span>${slowDownMsg}</span>
         </div>
         <div class="pmp-details">
-          ${isOnRoute && routePotholeData ? `
-          <div class="pmp-row" style="color:var(--accent); font-weight:700;">
-            <span class="pmp-lbl">🛣️ Route Position:</span>
-            <span class="pmp-val">${routePotholeData.distanceFromStartMeters >= 1000 ? (routePotholeData.distanceFromStartMeters / 1000).toFixed(1) + ' km from start' : Math.round(routePotholeData.distanceFromStartMeters) + ' m from start'}</span>
-          </div>` : ''}
           <div class="pmp-row">
             <span class="pmp-lbl">📍 Coordinates:</span>
             <span class="pmp-val">${Number(p.latitude).toFixed(5)}, ${Number(p.longitude).toFixed(5)}</span>
@@ -485,112 +459,7 @@ window.filterMarkers = function() {
   });
 };
 
-// ── Advance Potholes Ahead Preview (Shown in Advance Before Riding) ───
-function renderAdvancePotholesPreview(routePotholes = []) {
-  const container = document.getElementById('route-advance-potholes-container');
-  const badgeEl = document.getElementById('rap-badge');
-  const listEl = document.getElementById('route-potholes-ahead-list');
 
-  if (!container || !badgeEl || !listEl) return;
-
-  const activeRouteCoords = currentRouteCoordinates || (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
-  if (!activeRouteCoords || activeRouteCoords.length === 0) {
-    container.style.display = 'none';
-    listEl.innerHTML = '';
-    return;
-  }
-
-  if (routePotholes.length === 0) {
-    container.style.display = 'flex';
-    container.classList.add('all-clear');
-    badgeEl.textContent = '0 Hazards';
-    listEl.innerHTML = `
-      <div class="pothole-ahead-chip severity-low" style="cursor:default;">
-        <span>🟢 Smooth Route — No Potholes Ahead</span>
-      </div>
-    `;
-    return;
-  }
-
-  container.classList.remove('all-clear');
-  container.style.display = 'flex';
-
-  const highCount = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'high').length;
-  const medCount = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'medium').length;
-  const lowCount = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'low').length;
-
-  let badgeItems = [];
-  if (highCount > 0) badgeItems.push(`${highCount} 🔴 High`);
-  if (medCount > 0) badgeItems.push(`${medCount} 🟠 Med`);
-  if (lowCount > 0) badgeItems.push(`${lowCount} 🟢 Low`);
-  badgeEl.textContent = badgeItems.join(', ') || `${routePotholes.length} Hazards`;
-
-  listEl.innerHTML = routePotholes.map(p => {
-    const sev = (p.severity || 'medium').toLowerCase();
-    const emoji = sev === 'high' ? '🔴' : (sev === 'medium' ? '🟠' : '🟢');
-    const distM = p.distanceFromStartMeters || 0;
-    const distStr = distM >= 1000 ? `${(distM / 1000).toFixed(1)} km` : `${Math.round(distM)} m`;
-    const actionTip = sev === 'high' ? 'Slow Down' : (sev === 'medium' ? 'Caution' : 'Minor');
-
-    return `
-      <div class="pothole-ahead-chip severity-${sev}" onclick="focusPotholeAhead(${p.id})" title="Click to focus on ${sev.toUpperCase()} pothole ahead at ${distStr}">
-        <span>${emoji}</span>
-        <span>${actionTip}</span>
-        <span class="pac-dist">at ${distStr}</span>
-      </div>
-    `;
-  }).join('');
-}
-window.renderAdvancePotholesPreview = renderAdvancePotholesPreview;
-
-window.focusPotholeAhead = function(potholeId) {
-  const target = allPatholesData.find(p => p.id === Number(potholeId));
-  if (!target || !map) return;
-
-  map.flyTo({
-    center: [target.longitude, target.latitude],
-    zoom: 17,
-    pitch: is3DMode ? 50 : 0,
-    duration: 900
-  });
-
-  const matchingMarker = activePotholeMarkers.find(m => {
-    const el = m.getElement();
-    return el && el.getAttribute('data-id') == String(potholeId);
-  });
-
-  if (matchingMarker) {
-    matchingMarker.togglePopup();
-  }
-
-  showToast(`🔍 Viewing upcoming ${target.severity.toUpperCase()} pothole #${target.id}`, 'info');
-};
-
-function announceAdvanceRoutePotholes(routePotholes) {
-  if (window.isMuted) return;
-  if (!routePotholes || routePotholes.length === 0) {
-    if (typeof speakNav === 'function') {
-      speakNav('Route calculated. Road is clear with no reported potholes ahead.');
-    }
-    return;
-  }
-  const high = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'high').length;
-  const med = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'medium').length;
-
-  let announcement = `Route calculated with ${routePotholes.length} pothole${routePotholes.length > 1 ? 's' : ''} ahead.`;
-  if (high > 0) {
-    announcement += ` ${high} high severity hazard${high > 1 ? 's' : ''} detected.`;
-  }
-  if (med > 0) {
-    announcement += ` ${med} medium bump${med > 1 ? 's' : ''}.`;
-  }
-  announcement += ` Please review hazard marks to slow down safely.`;
-
-  if (typeof speakNav === 'function') {
-    speakNav(announcement);
-  }
-}
-window.announceAdvanceRoutePotholes = announceAdvanceRoutePotholes;
 
 function updateRoadConditionUI(routePotholes = []) {
   const highCount = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'high').length;
@@ -856,10 +725,6 @@ function displayRouteOnMap(route, destName) {
   });
 
   filterMarkers();
-
-  // Announce route hazard summary in advance before riding
-  const routePotholes = filterPotholesAlongRoute(currentRouteCoordinates, window.ROUTE_PROXIMITY_THRESHOLD_METERS);
-  announceAdvanceRoutePotholes(routePotholes);
 }
 
 // ── Quick Camera Fly-To Helpers ─────────────────────────────────────
