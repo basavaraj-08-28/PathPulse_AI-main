@@ -345,15 +345,11 @@ window.refreshMap = function() {
   showToast('🔄 Map and pothole data refreshed', 'info');
 };
 
-// ── Pothole Markers Rendering (High = Red Circle, Medium = Orange Circle, Low = Green Circle) ──
+// ── Pothole Markers Rendering (Clean Preview vs Active Nav) ─────────
 window.filterMarkers = function() {
   // Clear any existing DOM pothole markers
   activePotholeMarkers.forEach(m => m.remove());
   activePotholeMarkers = [];
-
-  const showLow = document.getElementById('filter-low')?.checked ?? true;
-  const showMed = document.getElementById('filter-medium')?.checked ?? true;
-  const showHigh = document.getElementById('filter-high')?.checked ?? true;
 
   const activeRouteCoords = currentRouteCoordinates || (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
 
@@ -370,96 +366,8 @@ window.filterMarkers = function() {
     countEl.textContent = routePotholes.length;
   }
 
-  updateRoadConditionUI(routePotholes);
-
-  if (!map || !allPatholesData || allPatholesData.length === 0) return;
-
-  allPatholesData.forEach(p => {
-    if (p.is_active === false) return;
-    const sev = (p.severity || 'medium').toLowerCase();
-    if (sev === 'low' && !showLow) return;
-    if (sev === 'medium' && !showMed) return;
-    if (sev === 'high' && !showHigh) return;
-
-    // Create custom DOM circle marker element
-    const el = document.createElement('div');
-    el.className = `pothole-circle-marker-wrap severity-${sev}`;
-    el.setAttribute('data-id', p.id);
-    el.setAttribute('data-severity', sev);
-    el.setAttribute('title', `${sev.toUpperCase()} Severity Pothole #${p.id} — Slow down`);
-
-    el.innerHTML = `
-      <div class="pothole-circle-pulse"></div>
-      <div class="pothole-circle-core"></div>
-    `;
-
-    // Severity specific popup presentation
-    const sevUpper = sev.toUpperCase();
-    const badgeColor = sev === 'high' ? '#ef4444' : (sev === 'medium' ? '#f59e0b' : '#10b981');
-    const badgeBg = sev === 'high' ? '#fee2e2' : (sev === 'medium' ? '#fef3c7' : '#d1fae5');
-    const slowDownMsg = sev === 'high'
-      ? '🛑 <strong>SLOW DOWN VEHICLE!</strong> Major hazard detected.'
-      : (sev === 'medium'
-        ? '⚠️ <strong>Reduce speed!</strong> Medium bump detected.'
-        : '🟢 <strong>Minor bump</strong> detected on road.');
-    const bannerClass = sev === 'high' ? '' : (sev === 'medium' ? 'med' : 'low');
-
-    const popupHtml = `
-      <div class="pothole-map-popup">
-        <div class="pmp-header">
-          <span class="pmp-badge" style="background:${badgeBg}; color:${badgeColor}; border:1px solid ${badgeColor};">
-            ${sev === 'high' ? '🔴' : (sev === 'medium' ? '🟠' : '🟢')} ${sevUpper} POTHOLE
-          </span>
-          <span class="pmp-id">#${p.id}</span>
-        </div>
-        <div class="pmp-warning-banner ${bannerClass}">
-          <span>${slowDownMsg}</span>
-        </div>
-        <div class="pmp-details">
-          <div class="pmp-row">
-            <span class="pmp-lbl">📍 Coordinates:</span>
-            <span class="pmp-val">${Number(p.latitude).toFixed(5)}, ${Number(p.longitude).toFixed(5)}</span>
-          </div>
-          ${p.confidence ? `
-          <div class="pmp-row">
-            <span class="pmp-lbl">🎯 Confidence:</span>
-            <span class="pmp-val">${Math.round(p.confidence * 100)}%</span>
-          </div>` : ''}
-          ${p.accel_peak ? `
-          <div class="pmp-row">
-            <span class="pmp-lbl">💥 Peak Impact:</span>
-            <span class="pmp-val">${Number(p.accel_peak).toFixed(1)} m/s²</span>
-          </div>` : ''}
-          ${p.created_at ? `
-          <div class="pmp-row">
-            <span class="pmp-lbl">🕒 Detected:</span>
-            <span class="pmp-val">${new Date(p.created_at).toLocaleDateString()}</span>
-          </div>` : ''}
-        </div>
-        <div class="pmp-actions">
-          <button class="btn btn-sm btn-primary" onclick="setDestinationFromCoords(${p.latitude}, ${p.longitude}, '${sevUpper} Pothole #${p.id}')">
-            🚗 Navigate Here
-          </button>
-        </div>
-      </div>
-    `;
-
-    const popup = new maplibregl.Popup({ offset: 16, maxWidth: '280px', closeButton: true })
-      .setHTML(popupHtml);
-
-    const marker = new maplibregl.Marker({
-      element: el,
-      anchor: 'center'
-    })
-      .setLngLat([p.longitude, p.latitude])
-      .setPopup(popup)
-      .addTo(map);
-
-    activePotholeMarkers.push(marker);
-  });
+  // Remove all pothole markers from the map per user specification (clean map view)
 };
-
-
 
 function updateRoadConditionUI(routePotholes = []) {
   const highCount = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'high').length;
@@ -511,70 +419,31 @@ function filterPotholesAlongRoute(routeCoords, thresholdMeters) {
   const showMed = document.getElementById('filter-medium')?.checked ?? true;
   const showHigh = document.getElementById('filter-high')?.checked ?? true;
 
-  // Pre-calculate cumulative distance along the route
-  const cumulativeDistances = [0];
-  for (let i = 0; i < routeCoords.length - 1; i++) {
-    const p1 = routeCoords[i];
-    const p2 = routeCoords[i + 1];
-    const segDist = haversineMeters(
-      p1.lat || p1[1], p1.lng || p1[0],
-      p2.lat || p2[1], p2.lng || p2[0]
-    );
-    cumulativeDistances.push((cumulativeDistances[i] || 0) + segDist);
-  }
-
   const result = [];
   allPatholesData.forEach(p => {
     if (p.is_active === false) return;
-    const sev = (p.severity || 'medium').toLowerCase();
-    if (sev === 'low' && !showLow) return;
-    if (sev === 'medium' && !showMed) return;
-    if (sev === 'high' && !showHigh) return;
+    if (p.severity === 'low' && !showLow) return;
+    if (p.severity === 'medium' && !showMed) return;
+    if (p.severity === 'high' && !showHigh) return;
 
     let minDist = Infinity;
-    let closestSegmentIdx = 0;
-    let closestSegmentFraction = 0;
-
     for (let i = 0; i < routeCoords.length - 1; i++) {
       const p1 = routeCoords[i];
       const p2 = routeCoords[i + 1];
-      const lat1 = p1.lat || p1[1];
-      const lng1 = p1.lng || p1[0];
-      const lat2 = p2.lat || p2[1];
-      const lng2 = p2.lng || p2[0];
-
-      const l2 = (lng2 - lng1) * (lng2 - lng1) + (lat2 - lat1) * (lat2 - lat1);
-      let t = 0;
-      if (l2 > 0) {
-        t = ((p.longitude - lng1) * (lng2 - lng1) + (p.latitude - lat1) * (lat2 - lat1)) / l2;
-        t = Math.max(0, Math.min(1, t));
-      }
-      const projLng = lng1 + t * (lng2 - lng1);
-      const projLat = lat1 + t * (lat2 - lat1);
-      const d = haversineMeters(p.latitude, p.longitude, projLat, projLng);
-
-      if (d < minDist) {
-        minDist = d;
-        closestSegmentIdx = i;
-        closestSegmentFraction = t;
-      }
+      const d = getDistanceToSegmentMeters(
+        p.latitude, p.longitude,
+        p1.lat || p1[1], p1.lng || p1[0],
+        p2.lat || p2[1], p2.lng || p2[0]
+      );
+      if (d < minDist) minDist = d;
     }
 
     if (minDist <= thresholdMeters) {
-      const segStart = cumulativeDistances[closestSegmentIdx] || 0;
-      const segEnd = cumulativeDistances[closestSegmentIdx + 1] || segStart;
-      const distFromStart = segStart + (segEnd - segStart) * closestSegmentFraction;
-
-      result.push({
-        ...p,
-        distToRoute: minDist,
-        distanceFromStartMeters: Math.round(distFromStart)
-      });
+      p.distToRoute = minDist;
+      result.push(p);
     }
   });
 
-  // Sort sequentially along the route path
-  result.sort((a, b) => a.distanceFromStartMeters - b.distanceFromStartMeters);
   return result;
 }
 

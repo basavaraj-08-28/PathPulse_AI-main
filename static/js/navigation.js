@@ -37,7 +37,7 @@ window.NAV = NAV;
 
 let isCourseUpMode = true;
 let currentMapBearing = 0;
-const PATHOLE_WARN_DISTANCE_M = 65;
+const PATHOLE_WARN_DISTANCE_M = 50;
 
 // ── Calculate Bearing Angle ─────────────────────────────────────────
 function calculateBearing(lat1, lon1, lat2, lon2) {
@@ -351,7 +351,7 @@ function updateLiveNavUI(lat, lng) {
   }
 }
 
-// ── Pothole Warning System (Slow Down Alert) ────────────────────────
+// ── Pothole Warning System ──────────────────────────────────────────
 function checkPatholeProximityNav(lat, lng) {
   const patholes = window.allPatholesData || [];
   if (patholes.length === 0) return;
@@ -372,14 +372,7 @@ function checkPatholeProximityNav(lat, lng) {
     showPatholeWarning(closest, Math.round(closestDist));
     if (!NAV.spokenPatholes.has(closest.id)) {
       NAV.spokenPatholes.add(closest.id);
-      const sev = (closest.severity || 'medium').toLowerCase();
-      if (sev === 'high') {
-        speakNav(`Warning! High severity pothole ahead in ${Math.round(closestDist)} metres. Please slow down your vehicle.`);
-      } else if (sev === 'medium') {
-        speakNav(`Caution! Medium pothole ahead in ${Math.round(closestDist)} metres. Please reduce speed.`);
-      } else {
-        speakNav(`Minor road bump ahead in ${Math.round(closestDist)} metres.`);
-      }
+      speakNav(`Warning. ${closest.severity} severity pothole ahead in ${Math.round(closestDist)} metres.`);
     }
   } else {
     hidePatholeWarning();
@@ -391,7 +384,7 @@ function showPatholeWarning(pathole, distMetres) {
   if (!card) return;
 
   const sev = (pathole.severity || 'medium').toLowerCase();
-  const sevUpper = sev === 'high' ? 'HIGH' : (sev === 'medium' ? 'MEDIUM' : 'LOW');
+  const sevUpper = sev === 'high' ? 'HIGH' : (sev === 'medium' ? 'MED' : 'LOW');
   const emoji = sev === 'high' ? '🔴' : (sev === 'medium' ? '🟠' : '🟢');
 
   card.className = `pathole-warning-card severity-${sev} pw-visible`;
