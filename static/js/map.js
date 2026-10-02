@@ -447,20 +447,49 @@ function filterPotholesAlongRoute(routeCoords, thresholdMeters) {
   return result;
 }
 
-// ── Destination & OSRM 3D Routing ───────────────────────────────────
-async function setDestinationFromCoords(lat, lng, name = 'Selected Location') {
+// ── Destination Marker Helper ───────────────────────────────────────
+function setDestinationMarker(lat, lng, name = 'Destination') {
   if (destinationMarker) {
     destinationMarker.remove();
     destinationMarker = null;
   }
 
-  const pinEl = document.createElement('div');
-  pinEl.className = 'dest-marker-3d';
-  pinEl.innerHTML = '🎯';
+  const el = document.createElement('div');
+  el.className = 'dest-marker-root';
+  el.innerHTML = `
+    <div class="dest-marker-pulse"></div>
+    <div class="dest-marker-wrapper">
+      <div class="dest-marker-pin" title="${name}">
+        <div class="dest-marker-inner">
+          <span>🏁</span>
+        </div>
+      </div>
+      <div class="dest-marker-label">${name}</div>
+    </div>
+  `;
 
-  destinationMarker = new maplibregl.Marker({ element: pinEl, anchor: 'bottom' })
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (map) {
+      map.flyTo({ center: [lng, lat], zoom: 16, pitch: is3DMode ? 55 : 0, duration: 800 });
+      showToast(`🎯 Destination: ${name}`, 'info');
+    }
+  });
+
+  destinationMarker = new maplibregl.Marker({
+    element: el,
+    anchor: 'bottom'
+  })
     .setLngLat([lng, lat])
     .addTo(map);
+
+  window.destinationMarker = destinationMarker;
+}
+window.setDestinationMarker = setDestinationMarker;
+
+// ── Destination & OSRM 3D Routing ───────────────────────────────────
+async function setDestinationFromCoords(lat, lng, name = 'Selected Location') {
+  setDestinationMarker(lat, lng, name);
 
   const startLat = lastKnownGPSPosition ? lastKnownGPSPosition.latitude : 12.971599;
   const startLng = lastKnownGPSPosition ? lastKnownGPSPosition.longitude : 77.594566;
@@ -548,6 +577,12 @@ function displayRouteOnMap(route, destName) {
   if (routeInfo) routeInfo.style.display = 'flex';
   if (startBtn) startBtn.style.display = 'inline-flex';
   if (hintEl) hintEl.classList.add('hidden');
+
+  // Ensure destination marker is placed at the exact route endpoint
+  const lastCoord = route.geometry.coordinates[route.geometry.coordinates.length - 1];
+  if (lastCoord) {
+    setDestinationMarker(lastCoord[1], lastCoord[0], destName || 'Destination');
+  }
 
   // Fit camera bounds around full route with comfortable view margins
   const bounds = new maplibregl.LngLatBounds();
