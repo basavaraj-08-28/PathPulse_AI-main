@@ -2890,8 +2890,9 @@ body.live-nav-active .pathole-warning-card {
   align-items: center;
   gap: 6px;
   font-weight: 800;
-  font-size: 0.95rem;
+  font-size: 0.96rem;
   color: #713f12;
+  white-space: nowrap;
   letter-spacing: -0.01em;
 }
 
@@ -2903,11 +2904,12 @@ body.live-nav-active .pathole-warning-card {
 }
 
 .pathole-warning-card .pw-dist {
-  font-size: 0.82rem;
-  color: #854d0e;
-  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.84rem;
+  color: #8c7750;
+  font-family: 'Courier New', Courier, monospace;
   font-weight: 600;
   margin-top: 3px;
+  letter-spacing: 0.5px;
 }
 
 .pathole-warning-card.severity-high,
