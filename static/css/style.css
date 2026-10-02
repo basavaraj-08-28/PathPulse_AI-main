@@ -655,6 +655,154 @@ body {
   font-size: 0.7rem;
 }
 
+/* ── Advance Potholes Ahead Preview (Shown before & during ride) ─── */
+.route-advance-potholes-container {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: rgba(254, 242, 242, 0.95);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 10px;
+  padding: 6px 8px;
+  margin-top: 4px;
+  transition: all 0.3s ease;
+}
+
+.route-advance-potholes-container.all-clear {
+  background: rgba(236, 253, 245, 0.95);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.rap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rap-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #991b1b;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.route-advance-potholes-container.all-clear .rap-title {
+  color: #065f46;
+}
+
+.rap-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.route-advance-potholes-container.all-clear .rap-badge {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.route-potholes-ahead-list {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.route-potholes-ahead-list::-webkit-scrollbar {
+  height: 4px;
+}
+
+.route-potholes-ahead-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+
+.pothole-ahead-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  padding: 3px 7px;
+  border-radius: 8px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #1e293b;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.pothole-ahead-chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+}
+
+.pothole-ahead-chip.severity-high {
+  border-color: #fca5a5;
+  background: #fff5f5;
+  color: #991b1b;
+}
+
+.pothole-ahead-chip.severity-medium {
+  border-color: #fcd34d;
+  background: #fffdf0;
+  color: #92400e;
+}
+
+.pothole-ahead-chip.severity-low {
+  border-color: #a7f3d0;
+  background: #f0fdf4;
+  color: #065f46;
+}
+
+.pothole-ahead-chip .pac-dist {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+}
+
+/* ── On-Route Pothole Marker Pulse Highlight ─────────────────────── */
+.pothole-circle-marker-wrap.on-route-hazard .pothole-circle-core {
+  transform: scale(1.18);
+  border-width: 3px;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 1), 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.pothole-circle-marker-wrap.on-route-hazard .pothole-circle-pulse {
+  animation-duration: 1.2s;
+  inset: -10px;
+}
+
+.pothole-distance-tag {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  z-index: 10;
+}
+
 @keyframes slideDown {
   from {
     opacity: 0;

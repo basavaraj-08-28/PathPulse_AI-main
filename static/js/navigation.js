@@ -349,6 +349,49 @@ function updateLiveNavUI(lat, lng) {
     const arr = new Date(Date.now() + etaMins * 60000);
     arrivalTimeEl.textContent = arr.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
+
+  // Next upcoming hazard ahead in advance
+  const hazardDotEl = document.getElementById('live-nav-hazard-dot');
+  const nextHazardEl = document.getElementById('live-nav-next-hazard');
+  if (hazardDotEl && nextHazardEl) {
+    const allPotholes = window.allPatholesData || [];
+    let nextPothole = null;
+    let nextPotholeDist = Infinity;
+
+    if (NAV.currentRoute && NAV.currentRoute.length > 0) {
+      const { idx: currIdx } = closestPointOnRoute(lat, lng);
+      allPotholes.forEach(p => {
+        if (p.is_active === false) return;
+        const { idx: pIdx, dist: pOffRouteDist } = closestPointOnRoute(p.latitude, p.longitude);
+        if (pOffRouteDist <= 30 && pIdx >= currIdx) {
+          // Calculate distance along route from current vehicle location
+          let distAlong = 0;
+          for (let i = currIdx; i < pIdx; i++) {
+            distAlong += haversineMeters(
+              NAV.currentRoute[i].lat, NAV.currentRoute[i].lng,
+              NAV.currentRoute[i+1].lat, NAV.currentRoute[i+1].lng
+            );
+          }
+          if (distAlong > 0 && distAlong < nextPotholeDist) {
+            nextPotholeDist = distAlong;
+            nextPothole = p;
+          }
+        }
+      });
+    }
+
+    if (nextPothole && nextPotholeDist < 5000) {
+      const pSev = (nextPothole.severity || 'medium').toLowerCase();
+      const pEmoji = pSev === 'high' ? '🔴' : (pSev === 'medium' ? '🟠' : '🟢');
+      const distStr = nextPotholeDist >= 1000 ? `${(nextPotholeDist / 1000).toFixed(1)}km` : `${Math.round(nextPotholeDist)}m`;
+      nextHazardEl.innerHTML = `${pEmoji} Pothole in ${distStr}`;
+      nextHazardEl.style.display = 'inline';
+      hazardDotEl.style.display = 'inline';
+    } else {
+      nextHazardEl.style.display = 'none';
+      hazardDotEl.style.display = 'none';
+    }
+  }
 }
 
 // ── Pothole Warning System (Slow Down Alert) ────────────────────────
