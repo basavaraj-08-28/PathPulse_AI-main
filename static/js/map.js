@@ -73,11 +73,29 @@ function initMap() {
     startLiveLocation();
   });
 
-  // Click on map to select destination
+  // Click on map to select destination (only when no route is active, to prevent accidental re-routing while panning)
   map.on('click', (e) => {
     if (typeof NAV !== 'undefined' && NAV.isNavigating) return;
+    if (currentRouteCoordinates && currentRouteCoordinates.length > 0) return;
     const { lng, lat } = e.lngLat;
     setDestinationFromCoords(lat, lng, 'Selected Location');
+  });
+
+  // When user manually pans/drags the map during navigation or preview, pause auto-centering
+  map.on('dragstart', () => {
+    if (typeof NAV !== 'undefined' && NAV.isNavigating) {
+      NAV.isFollowing = false;
+      const recenterBtn = document.getElementById('btn-live-recenter');
+      if (recenterBtn) recenterBtn.style.boxShadow = '0 0 16px rgba(37, 99, 235, 0.9)';
+    }
+  });
+
+  map.on('touchstart', () => {
+    if (typeof NAV !== 'undefined' && NAV.isNavigating) {
+      NAV.isFollowing = false;
+      const recenterBtn = document.getElementById('btn-live-recenter');
+      if (recenterBtn) recenterBtn.style.boxShadow = '0 0 16px rgba(37, 99, 235, 0.9)';
+    }
   });
 
   // Window resize handler
@@ -520,13 +538,43 @@ function displayRouteOnMap(route, destName) {
   if (startBtn) startBtn.style.display = 'inline-flex';
   if (hintEl) hintEl.classList.add('hidden');
 
-  // Fit camera bounds around route in 2D preview
+  // Fit camera bounds around full route with comfortable view margins
   const bounds = new maplibregl.LngLatBounds();
   route.geometry.coordinates.forEach(c => bounds.extend(c));
-  map.fitBounds(bounds, { padding: 60, maxZoom: 16, pitch: 0 });
+  map.fitBounds(bounds, {
+    padding: { top: 70, bottom: 90, left: 50, right: 50 },
+    maxZoom: 16,
+    pitch: 0
+  });
 
   filterMarkers();
 }
+
+// ── Quick Camera Fly-To Helpers ─────────────────────────────────────
+window.flyToDestination = function() {
+  if (destinationMarker && map) {
+    const lngLat = destinationMarker.getLngLat();
+    map.flyTo({
+      center: [lngLat.lng, lngLat.lat],
+      zoom: 16,
+      pitch: is3DMode ? 55 : 0,
+      duration: 1000
+    });
+    showToast('🎯 Viewing Destination point', 'info');
+  }
+};
+
+window.flyToOrigin = function() {
+  if (lastKnownGPSPosition && map) {
+    map.flyTo({
+      center: [lastKnownGPSPosition.longitude, lastKnownGPSPosition.latitude],
+      zoom: 16,
+      pitch: is3DMode ? 55 : 0,
+      duration: 1000
+    });
+    showToast('📍 Viewing Starting point', 'info');
+  }
+};
 
 function renderRouteAlternatives(routes) {
   const bar = document.getElementById('route-alternatives-bar');

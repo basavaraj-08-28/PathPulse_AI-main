@@ -8,8 +8,6 @@
   <meta name="description"
     content="Live pathole map with Google Maps-style navigation, voice guidance, and pathole-aware routing.">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0f172a">
@@ -184,38 +182,6 @@
       width: 100% !important;
     }
 
-    /* Hide LRM sidebar panel */
-    .leaflet-routing-container {
-      display: none !important;
-    }
-
-    /* ── Leaflet Controls Positioning ────────────────────────── */
-    .leaflet-top.leaflet-left {
-      top: 10px !important;
-      left: 10px !important;
-    }
-
-    .leaflet-control-zoom {
-      border: 1px solid rgba(0, 0, 0, 0.12) !important;
-      border-radius: 10px !important;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15) !important;
-      overflow: hidden;
-      margin: 0 !important;
-    }
-
-    .leaflet-bottom.leaflet-right {
-      bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important;
-      right: 10px !important;
-    }
-
-    .leaflet-control-layers {
-      border-radius: 12px !important;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18) !important;
-      border: 1px solid rgba(0, 0, 0, 0.12) !important;
-      margin: 0 !important;
-      margin-bottom: calc(4px + env(safe-area-inset-bottom, 0px)) !important;
-    }
-
     /* ── Mobile Compact Tweaks ───────────────────────────────── */
     @media (max-width: 768px) {
       body.map-page .navbar {
@@ -386,12 +352,12 @@
         <!-- Route Alternatives Selector Bar -->
         <div id="route-alternatives-bar" class="route-alternatives-bar" style="display:none;"></div>
         <div class="route-locations">
-          <div class="loc-item">
+          <div class="loc-item" onclick="flyToOrigin()" style="cursor:pointer;" title="Click to view start location">
             <span class="loc-dot start"></span>
             <span class="loc-label">Start:</span>
             <span id="route-start-name" class="loc-text">Current GPS Location</span>
           </div>
-          <div class="loc-item">
+          <div class="loc-item" onclick="flyToDestination()" style="cursor:pointer;" title="Click to view destination">
             <span class="loc-dot dest"></span>
             <span class="loc-label">Destination:</span>
             <span id="route-dest-name" class="loc-text">Selected Location</span>
@@ -476,8 +442,6 @@
 
   <!-- ── Scripts ─────────────────────────────────────────────────────── -->
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
   <!-- map.js must load before navigation.js -->
   <script src="{{ url_for('static', filename='js/map.js') }}"></script>
