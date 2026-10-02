@@ -366,47 +366,7 @@ window.filterMarkers = function() {
     countEl.textContent = routePotholes.length;
   }
 
-  /*
-   * USER SPECIFICATION:
-   * 1. Browse / preview mode: Keep map clean (potholes hidden).
-   * 2. Live Navigation mode: Render clean circular dot markers (🔴 HIGH, 🟠 MED, 🟢 LOW) directly along route.
-   */
-  const isNavigating = typeof NAV !== 'undefined' && NAV.isNavigating;
-  if (isNavigating && routePotholes.length > 0 && map) {
-    routePotholes.forEach(p => {
-      const markerEl = document.createElement('div');
-      const sev = (p.severity || 'medium').toLowerCase();
-      markerEl.className = `pothole-dot-marker severity-${sev}`;
-      markerEl.title = `${sev.toUpperCase()} Severity Pothole`;
-
-      const tag = sev === 'high' ? 'HIGH' : (sev === 'medium' ? 'MED' : 'LOW');
-      const emoji = sev === 'high' ? '🔴' : (sev === 'medium' ? '🟠' : '🟢');
-
-      const popup = new maplibregl.Popup({ offset: [0, -10] }).setHTML(`
-        <div style="font-weight:700;font-size:0.95rem;margin-bottom:4px;">
-          ${emoji} ${tag} Severity Pothole
-        </div>
-        <div style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:${SEVERITY_COLORS[sev] || '#f59e0b'};">
-          ${sev.toUpperCase()} Threat Level
-        </div>
-        <div style="font-size:0.78rem;color:#64748b;margin-top:6px;line-height:1.4;">
-          📍 ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}<br>
-          📊 Impact Reports: <strong>${p.report_count || 1}</strong> (${Math.round((p.confidence || 0.8) * 100)}% conf)
-          ${p.distToRoute ? `<br>📏 <strong>${p.distToRoute.toFixed(1)}m</strong> from route` : ''}
-        </div>
-      `);
-
-      const marker = new maplibregl.Marker({ element: markerEl, anchor: 'center' })
-        .setLngLat([p.longitude, p.latitude])
-        .setPopup(popup)
-        .addTo(map);
-
-      activePotholeMarkers.push(marker);
-    });
-  }
-
-  // Update Road Condition Summary in UI
-  updateRoadConditionUI(routePotholes);
+  // Remove all pothole markers from the map per user specification (clean map view)
 };
 
 function updateRoadConditionUI(routePotholes = []) {
