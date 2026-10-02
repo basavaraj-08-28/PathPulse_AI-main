@@ -346,65 +346,18 @@ window.refreshMap = function() {
 };
 
 // ── Pothole Markers Rendering (Clean Preview vs Active Nav) ─────────
-function createPotholeMarker(pothole) {
-  if (!map) return null;
-
-  const sev = (pothole.severity || 'medium').toLowerCase();
-  const sevLabel = sev.toUpperCase();
-  const sevIcon = sev === 'high' ? '⚠️' : (sev === 'medium' ? '⚡' : '🟡');
-
-  const wrap = document.createElement('div');
-  wrap.className = 'pothole-marker-root';
-  wrap.innerHTML = `
-    <div class="pothole-3d-pin-wrap">
-      <div class="pothole-3d-pin severity-${sev}">
-        <span>${sevIcon}</span>
-        <span>${sevLabel}</span>
-      </div>
-      <div class="pin-pointer"></div>
-    </div>
-  `;
-
-  const popupHTML = `
-    <div style="font-family: inherit; padding: 4px 2px;">
-      <div style="font-weight: 800; font-size: 0.95rem; color: #0f172a; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
-        ${sevIcon} <span>${sevLabel} Pothole Hazard</span>
-      </div>
-      <div style="font-size: 0.8rem; color: #64748b; line-height: 1.4;">
-        ${pothole.location_name ? `<b>Location:</b> ${pothole.location_name}<br>` : ''}
-        <b>Severity:</b> <span style="font-weight: 700; color: ${sev === 'high' ? '#dc2626' : (sev === 'medium' ? '#d97706' : '#059669')}">${sevLabel}</span><br>
-        ${pothole.confidence ? `<b>Confidence:</b> ${(pothole.confidence * 100).toFixed(0)}%<br>` : ''}
-        ${pothole.timestamp ? `<b>Reported:</b> ${new Date(pothole.timestamp).toLocaleDateString()}` : ''}
-      </div>
-    </div>
-  `;
-
-  const popup = new maplibregl.Popup({ offset: 20, closeButton: false }).setHTML(popupHTML);
-
-  wrap.addEventListener('mouseenter', () => popup.addTo(map));
-  wrap.addEventListener('mouseleave', () => popup.remove());
-
-  const marker = new maplibregl.Marker({ element: wrap, anchor: 'bottom' })
-    .setLngLat([pothole.longitude, pothole.latitude])
-    .setPopup(popup)
-    .addTo(map);
-
-  return marker;
-}
-
 window.filterMarkers = function() {
   // Clear any existing DOM pothole markers
   activePotholeMarkers.forEach(m => m.remove());
   activePotholeMarkers = [];
 
-  const isNavActive = typeof NAV !== 'undefined' && Boolean(NAV.isNavigating);
   const activeRouteCoords = currentRouteCoordinates || (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
 
   let routePotholes = [];
   if (activeRouteCoords && activeRouteCoords.length > 0) {
     routePotholes = filterPotholesAlongRoute(
       activeRouteCoords,
-      window.ROUTE_PROXIMITY_THRESHOLD_METERS || 30
+      window.ROUTE_PROXIMITY_THRESHOLD_METERS
     );
   }
 
@@ -413,17 +366,7 @@ window.filterMarkers = function() {
     countEl.textContent = routePotholes.length;
   }
 
-  updateRoadConditionUI(routePotholes);
-
-  // Show detected pothole marks along the route ONLY during active navigation
-  if (isNavActive && map && routePotholes.length > 0) {
-    routePotholes.forEach(p => {
-      if (p.latitude && p.longitude) {
-        const marker = createPotholeMarker(p);
-        if (marker) activePotholeMarkers.push(marker);
-      }
-    });
-  }
+  // Remove all pothole markers from the map per user specification (clean map view)
 };
 
 function updateRoadConditionUI(routePotholes = []) {
@@ -504,49 +447,20 @@ function filterPotholesAlongRoute(routeCoords, thresholdMeters) {
   return result;
 }
 
-// ── Destination Marker Helper ───────────────────────────────────────
-function setDestinationMarker(lat, lng, name = 'Destination') {
+// ── Destination & OSRM 3D Routing ───────────────────────────────────
+async function setDestinationFromCoords(lat, lng, name = 'Selected Location') {
   if (destinationMarker) {
     destinationMarker.remove();
     destinationMarker = null;
   }
 
-  const el = document.createElement('div');
-  el.className = 'dest-marker-root';
-  el.innerHTML = `
-    <div class="dest-marker-pulse"></div>
-    <div class="dest-marker-wrapper">
-      <div class="dest-marker-pin" title="${name}">
-        <div class="dest-marker-inner">
-          <span>🏁</span>
-        </div>
-      </div>
-      <div class="dest-marker-label">${name}</div>
-    </div>
-  `;
+  const pinEl = document.createElement('div');
+  pinEl.className = 'dest-marker-3d';
+  pinEl.innerHTML = '🎯';
 
-  el.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (map) {
-      map.flyTo({ center: [lng, lat], zoom: 16, pitch: is3DMode ? 55 : 0, duration: 800 });
-      showToast(`🎯 Destination: ${name}`, 'info');
-    }
-  });
-
-  destinationMarker = new maplibregl.Marker({
-    element: el,
-    anchor: 'bottom'
-  })
+  destinationMarker = new maplibregl.Marker({ element: pinEl, anchor: 'bottom' })
     .setLngLat([lng, lat])
     .addTo(map);
-
-  window.destinationMarker = destinationMarker;
-}
-window.setDestinationMarker = setDestinationMarker;
-
-// ── Destination & OSRM 3D Routing ───────────────────────────────────
-async function setDestinationFromCoords(lat, lng, name = 'Selected Location') {
-  setDestinationMarker(lat, lng, name);
 
   const startLat = lastKnownGPSPosition ? lastKnownGPSPosition.latitude : 12.971599;
   const startLng = lastKnownGPSPosition ? lastKnownGPSPosition.longitude : 77.594566;
@@ -634,12 +548,6 @@ function displayRouteOnMap(route, destName) {
   if (routeInfo) routeInfo.style.display = 'flex';
   if (startBtn) startBtn.style.display = 'inline-flex';
   if (hintEl) hintEl.classList.add('hidden');
-
-  // Ensure destination marker is placed at the exact route endpoint
-  const lastCoord = route.geometry.coordinates[route.geometry.coordinates.length - 1];
-  if (lastCoord) {
-    setDestinationMarker(lastCoord[1], lastCoord[0], destName || 'Destination');
-  }
 
   // Fit camera bounds around full route with comfortable view margins
   const bounds = new maplibregl.LngLatBounds();
