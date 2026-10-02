@@ -179,8 +179,22 @@
     #main-map {
       position: absolute;
       inset: 0;
-      height: 100% !important;
-      width: 100% !important;
+      height: 100%;
+      width: 100%;
+    }
+
+    body.live-nav-active #main-map {
+      position: absolute !important;
+      width: 250vmax !important;
+      height: 250vmax !important;
+      top: 50% !important;
+      left: 50% !important;
+      margin-top: -125vmax !important;
+      margin-left: -125vmax !important;
+      inset: auto !important;
+      border-radius: 0 !important;
+      transform-origin: 50% 50% !important;
+      will-change: transform;
     }
 
     /* Hide LRM sidebar panel */
