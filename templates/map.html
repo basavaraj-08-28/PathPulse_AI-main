@@ -7,6 +7,7 @@
   <title>Map — PathPulse AI</title>
   <meta name="description"
     content="Live pathole map with Google Maps-style navigation, voice guidance, and pathole-aware routing.">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -342,6 +343,9 @@
 
         <!-- Utility buttons -->
         <button class="mute-btn" id="btn-mute" onclick="toggleMute()" title="Mute/Unmute Audio Warnings">🔊</button>
+        <button class="btn btn-secondary btn-sm" id="btn-toggle-3d" onclick="toggle3DView()" title="Toggle 3D Buildings & Tilt">
+          🏢 3D
+        </button>
         <button class="btn btn-primary btn-sm" id="btn-locate" onclick="locateUser()">
           📍 My Location
         </button>
@@ -471,6 +475,7 @@
   <div id="toast-container"></div>
 
   <!-- ── Scripts ─────────────────────────────────────────────────────── -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 

@@ -1,1663 +1,533 @@
 /**
- * PathPulse AI — Dashboard Map Script
- * Initializes the main map and loads pothole markers
+ * PathPulse AI — 3D Vector Map Engine (map.js)
+ * Powered by MapLibre GL JS + 3D Building Extrusions + OSRM Routing
  *
- * GPS FIXED VERSION
- * - Uses real device GPS
- * - Uses continuous watchPosition()
- * - Removes fake Chennai GPS fallback
- * - Requires HTTPS on mobile
- * - Keeps route/search/pothole functionality
+ * Features:
+ * - Full WebGL Hardware-Accelerated 3D Vector Map
+ * - 3D Building Height Extrusions with ambient lighting
+ * - Native 360° rotation with upright street labels
+ * - 3D Camera Pitch (0° flat overview to 58° driving perspective)
+ * - Real-Time GPS Location & 3D Navigation Puck
+ * - OSRM Multi-Route Calculation with interactive alternatives
+ * - Clean preview mode (pothole markers shown exclusively during active navigation)
+ * - Autocomplete Search, Recent & Favourite destinations
  */
 
-// ── Map Initialization ──────────────────────────────────────────────
+// ── Map State & Global Variables ────────────────────────────────────
+let map = null;
+let userLocationMarker = null;
+let userAccuracyCircle = null;
+let destinationMarker = null;
+let lastKnownGPSPosition = null;
+let locationWatchId = null;
+let is3DMode = false;
 
-const map = L.map('main-map', {
-  zoomControl: true,
-  attributionControl: true
-}).setView([12.971599, 77.594566], 11); // Default: Bengaluru, India
+// Pothole and Route Data State
+let allPatholesData = [];
+window.allPatholesData = allPatholesData;
+let currentRouteCoordinates = null;
+window.currentRouteCoordinates = null;
+let allComputedRoutes = [];
+window.allComputedRoutes = allComputedRoutes;
+let selectedRouteIndex = 0;
+window.selectedRouteIndex = selectedRouteIndex;
 
-window.ppMap = map;
+let activePotholeMarkers = [];
+let isMuted = false;
+window.ROUTE_PROXIMITY_THRESHOLD_METERS = 25;
 
-let _mapResizeTimer = null;
-window.addEventListener('resize', () => {
-  if (document.body.classList.contains('live-nav-active')) return;
-  clearTimeout(_mapResizeTimer);
-  _mapResizeTimer = setTimeout(() => {
-    if (map) map.invalidateSize({ pan: false });
-  }, 250);
-}, { passive: true });
-
-window.addEventListener('orientationchange', () => {
-  setTimeout(() => {
-    if (map) map.invalidateSize({ pan: false });
-  }, 200);
-}, { passive: true });
-
-
-// ── Map Layers ──────────────────────────────────────────────────────
-
-const standardLayer = L.tileLayer(
-  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  {
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19
-  }
-);
-
-const satelliteLayer = L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  {
-    attribution: 'Tiles &copy; Esri',
-    maxZoom: 19
-  }
-);
-
-const terrainLayer = L.tileLayer(
-  'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-  {
-    attribution:
-      '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
-    maxZoom: 17
-  }
-);
-
-standardLayer.addTo(map);
-
-const baseMaps = {
-  "Standard": standardLayer,
-  "Satellite": satelliteLayer,
-  "Terrain": terrainLayer
-};
-
-L.control.layers(
-  baseMaps,
-  null,
-  {
-    position: 'bottomright'
-  }
-).addTo(map);
-
-
-// ── Severity Colors ─────────────────────────────────────────────────
-
+// Severity Color Definitions
 const SEVERITY_COLORS = {
-  low: '#09681fff',
+  low: '#10b981',
   medium: '#f59e0b',
   high: '#ef4444'
 };
 
-const SEVERITY_RADIUS = {
-  low: 8,
-  medium: 10,
-  high: 13
-};
-
-
-// ── Added Feature State ─────────────────────────────────────────────
-
-let allPatholesData = [];
-
-window.allPatholesData = allPatholesData;
-
-let alertedPatholes = new Set();
-
-let isMuted = false;
-
-
-// Configurable route proximity threshold
-
-window.ROUTE_PROXIMITY_THRESHOLD_METERS = 25;
-
-let currentRouteCoordinates = null;
-
-
-// ====================================================================
-// USER GPS LOCATION
-// ====================================================================
-
-let userLocationMarker = null;
-
-let userLocationCircle = null;
-
-let locationWatchId = null;
-
-let lastKnownGPSPosition = null;
-
-
-// GPS configuration
-
-const GPS_OPTIONS = {
-
-  enableHighAccuracy: true,
-
-  timeout: 30000,
-
-  maximumAge: 3000
-
-};
-
-
-// ── Show User Location ──────────────────────────────────────────────
-
-function showUserLocation(
-  lat,
-  lng,
-  accuracy,
-  centerMap = false,
-  pos = null
-) {
-
-  // Validate GPS coordinates
-
-  if (
-    !Number.isFinite(lat) ||
-    !Number.isFinite(lng)
-  ) {
-
-    console.warn(
-      '⚠️ Invalid GPS coordinates:',
-      lat,
-      lng
-    );
-
-    return;
-  }
-
-
-  const latLng = [
-    lat,
-    lng
-  ];
-
-
-  // If Live Navigation is active, suppress regular user markers so only navMarker is shown
-  if (typeof NAV !== 'undefined' && NAV.isNavigating) {
-    if (userLocationMarker && map.hasLayer(userLocationMarker)) map.removeLayer(userLocationMarker);
-    if (userLocationCircle && map.hasLayer(userLocationCircle)) map.removeLayer(userLocationCircle);
-  } else {
-    // ────────────────────────────────────────────────────────────────
-    // CREATE / UPDATE USER LOCATION MARKER
-    // ────────────────────────────────────────────────────────────────
-    if (!userLocationMarker) {
-      userLocationMarker =
-        L.circleMarker(
-          latLng,
-          {
-            radius: 8,
-            fillColor: '#06d6a0',
-            fillOpacity: 1,
-            color: '#ffffff',
-            weight: 3
-          }
-        )
-        .addTo(map)
-        .bindPopup('📍 You are here');
-
-      // GPS accuracy circle
-      userLocationCircle =
-        L.circle(
-          latLng,
-          {
-            radius:
-              Number.isFinite(accuracy) &&
-              accuracy > 0
-                ? accuracy
-                : 30,
-            fillColor: '#06d6a0',
-            fillOpacity: 0.08,
-            color: '#06d6a0',
-            weight: 1,
-            opacity: 0.3
-          }
-        )
-        .addTo(map);
-    } else {
-      if (!map.hasLayer(userLocationMarker)) userLocationMarker.addTo(map);
-      userLocationMarker.setLatLng(latLng);
-
-      if (userLocationCircle) {
-        if (!map.hasLayer(userLocationCircle)) userLocationCircle.addTo(map);
-        userLocationCircle.setLatLng(latLng);
-
-        if (Number.isFinite(accuracy) && accuracy > 0) {
-          userLocationCircle.setRadius(accuracy);
-        }
-      }
-    }
-  }
-
-  // ──────────────────────────────────────────────────────────────
-  // CENTER MAP ON FIRST REAL GPS FIX (PREVIEW ONLY)
-  // ──────────────────────────────────────────────────────────────
-  if (centerMap && (typeof NAV === 'undefined' || !NAV.isNavigating)) {
-    map.setView(latLng, 16);
-  }
-
-  // ──────────────────────────────────────────────────────────────
-  // CHECK POTHOLE PROXIMITY
-  // ──────────────────────────────────────────────────────────────
-  checkProximity(lat, lng);
-
-  // ──────────────────────────────────────────────────────────────
-  // NAVIGATION GPS HOOK
-  // ──────────────────────────────────────────────────────────────
-  if (typeof window.onNavGPSUpdate === 'function') {
-    window.onNavGPSUpdate(lat, lng, pos);
-  }
-}
-
-
-// ── GPS Success Handler ─────────────────────────────────────────────
-
-function handleGPSPosition(
-  position
-) {
-
-  const lat =
-    position.coords.latitude;
-
-  const lng =
-    position.coords.longitude;
-
-  const accuracy =
-    position.coords.accuracy;
-
-
-  // Validate coordinates
-
-  if (
-    !Number.isFinite(lat) ||
-    !Number.isFinite(lng)
-  ) {
-
-    console.error(
-      '❌ Invalid GPS coordinates received.'
-    );
-
-    return;
-  }
-
-
-  // Save latest GPS position
-
-  lastKnownGPSPosition = {
-
-    latitude: lat,
-
-    longitude: lng,
-
-    accuracy: accuracy,
-
-    timestamp:
-      position.timestamp
-  };
-
-
-  console.log(
-    `📍 LIVE GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)} | ` +
-    `Accuracy: ${
-      Number.isFinite(accuracy)
-        ? accuracy.toFixed(1)
-        : 'unknown'
-    }m`
-  );
-
-
-  // Check if this is first GPS fix
-
-  const firstFix =
-    !userLocationMarker;
-
-
-  // Show REAL GPS location
-
-  showUserLocation(
-    lat,
-    lng,
-    accuracy,
-    firstFix,
-    position
-  );
-
-
-  // Update locate button
-
-  const btn =
-    document.getElementById(
-      'btn-locate'
-    );
-
-
-  if (btn) {
-
-    btn.innerHTML =
-      '📍 My Location';
-
-    btn.disabled =
-      false;
-  }
-
-
-  // Show GPS success message
-
-  if (
-    firstFix &&
-    typeof showToast ===
-      'function'
-  ) {
-
-    const accuracyText =
-      Number.isFinite(accuracy)
-        ? Math.round(accuracy)
-        : '?';
-
-
-    showToast(
-      `📍 Live GPS location found (${accuracyText}m accuracy)`,
-      'success'
-    );
-  }
-}
-
-
-// ── GPS Error Handler ───────────────────────────────────────────────
-
-function handleGPSError(
-  error
-) {
-
-  console.warn(
-    '⚠️ Geolocation error:',
-    error.code,
-    error.message
-  );
-
-
-  const btn =
-    document.getElementById(
-      'btn-locate'
-    );
-
-
-  if (btn) {
-
-    btn.disabled =
-      false;
-  }
-
-
-  let message;
-
-
-  switch (
-    error.code
-  ) {
-
-    case error.PERMISSION_DENIED:
-
-      message =
-        '📍 Location permission denied. Please allow location access in browser settings.';
-
-      if (btn) {
-
-        btn.innerHTML =
-          '🔐 Allow GPS';
-      }
-
-      break;
-
-
-    case error.POSITION_UNAVAILABLE:
-
-      message =
-        '📍 GPS signal unavailable. Please turn ON device Location/GPS.';
-
-      if (btn) {
-
-        btn.innerHTML =
-          '📍 Retry GPS';
-      }
-
-      break;
-
-
-    case error.TIMEOUT:
-
-      message =
-        '📍 GPS fix timed out. Searching for your location...';
-
-      if (btn) {
-
-        btn.innerHTML =
-          '📍 Retry GPS';
-      }
-
-      break;
-
-
-    default:
-
-      message =
-        '📍 Could not fetch your current GPS location.';
-
-      if (btn) {
-
-        btn.innerHTML =
-          '📍 Retry GPS';
-      }
-  }
-
-
-  if (
-    typeof showToast ===
-    'function'
-  ) {
-
-    showToast(
-      message,
-      'warning'
-    );
-  }
-
-
-  /*
-   * IMPORTANT:
-   *
-   * There is NO fake GPS fallback here.
-   *
-   * The old code used:
-   *
-   * 13.0827, 80.2707
-   *
-   * which is Chennai.
-   *
-   * That has been removed.
-   */
-}
-
-
-// ── Start Live GPS Tracking ─────────────────────────────────────────
-
-function startLiveLocation() {
-
-  // Browser support check
-
-  if (
-    !navigator.geolocation
-  ) {
-
-    console.error(
-      '❌ Geolocation is not supported by this browser.'
-    );
-
-
-    if (
-      typeof showToast ===
-      'function'
-    ) {
-
-      showToast(
-        '❌ GPS is not supported by this browser.',
-        'error'
-      );
-    }
-
-
-    return false;
-  }
-
-
-  // ────────────────────────────────────────────────────────────────
-  // HTTPS CHECK
-  // ────────────────────────────────────────────────────────────────
-
-  const isLocalhost =
-    location.hostname ===
-      'localhost' ||
-
-    location.hostname ===
-      '127.0.0.1';
-
-
-  if (
-    !window.isSecureContext &&
-    !isLocalhost
-  ) {
-
-    console.error(
-      '❌ Geolocation requires HTTPS.'
-    );
-
-
-    if (
-      typeof showToast ===
-      'function'
-    ) {
-
-      showToast(
-        '⚠️ GPS requires HTTPS. Please open the HTTPS version of PathPulse.',
-        'error'
-      );
-    }
-
-
-    return false;
-  }
-
-
-  // ────────────────────────────────────────────────────────────────
-  // CLEAR OLD WATCHER
-  // ────────────────────────────────────────────────────────────────
-
-  if (
-    locationWatchId !== null
-  ) {
-
-    navigator.geolocation.clearWatch(
-      locationWatchId
-    );
-
-    locationWatchId =
-      null;
-  }
-
-
-  console.log(
-    '🛰️ Starting live GPS tracking...'
-  );
-
-
-  // ────────────────────────────────────────────────────────────────
-  // START CONTINUOUS GPS
-  // ────────────────────────────────────────────────────────────────
-
-  locationWatchId =
-    navigator.geolocation.watchPosition(
-
-      handleGPSPosition,
-
-      handleGPSError,
-
-      GPS_OPTIONS
-    );
-
-
-  return true;
-}
-
-
-// ── Stop Live GPS ──────────────────────────────────────────────────
-
-function stopLiveLocation() {
-
-  if (
-    locationWatchId !== null
-  ) {
-
-    navigator.geolocation.clearWatch(
-      locationWatchId
-    );
-
-    locationWatchId =
-      null;
-
-
-    console.log(
-      '🛰️ Live GPS tracking stopped.'
-    );
-  }
-}
-
-
-// ── Locate User ─────────────────────────────────────────────────────
-
-function locateUser() {
-
-  const btn =
-    document.getElementById(
-      'btn-locate'
-    );
-
-
-  if (btn) {
-
-    btn.innerHTML =
-      '⏳ Acquiring GPS...';
-
-    btn.disabled =
-      true;
-  }
-
-
-  // Start continuous GPS
-
-  const started =
+// ── Initialize MapLibre 3D Vector Map ───────────────────────────────
+function initMap() {
+  const defaultCenter = [77.594566, 12.971599]; // Bengaluru [lng, lat]
+
+  map = new maplibregl.Map({
+    container: 'main-map',
+    style: 'https://tiles.openfreemap.org/styles/bright',
+    center: defaultCenter,
+    zoom: 12,
+    pitch: 0,
+    bearing: 0,
+    antialias: true
+  });
+
+  window.ppMap = map;
+
+  // Add zoom and rotation controls to bottom-right
+  map.addControl(new maplibregl.NavigationControl({
+    visualizePitch: true,
+    showZoom: true,
+    showCompass: true
+  }), 'bottom-right');
+
+  map.on('load', () => {
+    setup3DBuildingsLayer();
+    setupRouteLayers();
+    loadPatholes();
     startLiveLocation();
+  });
 
+  // Click on map to select destination
+  map.on('click', (e) => {
+    if (typeof NAV !== 'undefined' && NAV.isNavigating) return;
+    const { lng, lat } = e.lngLat;
+    setDestinationFromCoords(lat, lng, 'Selected Location');
+  });
 
-  if (!started) {
+  // Window resize handler
+  window.addEventListener('resize', () => {
+    if (map) map.resize();
+  }, { passive: true });
+}
 
-    if (btn) {
-
-      btn.innerHTML =
-        '📍 Retry GPS';
-
-      btn.disabled =
-        false;
+// ── 3D Building Extrusions Layer ────────────────────────────────────
+function setup3DBuildingsLayer() {
+  if (!map) return;
+  const layers = map.getStyle().layers || [];
+  let labelLayerId;
+  for (let i = 0; i < layers.length; i++) {
+    if (layers[i].type === 'symbol' && layers[i].layout && layers[i].layout['text-field']) {
+      labelLayerId = layers[i].id;
+      break;
     }
+  }
 
+  if (!map.getLayer('3d-buildings')) {
+    map.addLayer({
+      id: '3d-buildings',
+      source: 'openmaptiles',
+      'source-layer': 'building',
+      filter: ['==', 'extrude', 'true'],
+      type: 'fill-extrusion',
+      minzoom: 13,
+      paint: {
+        'fill-extrusion-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'render_height'],
+          0, '#e2e8f0',
+          30, '#cbd5e1',
+          70, '#94a3b8',
+          150, '#64748b'
+        ],
+        'fill-extrusion-height': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          13, 0,
+          14.5, ['get', 'render_height']
+        ],
+        'fill-extrusion-base': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          13, 0,
+          14.5, ['get', 'render_min_height']
+        ],
+        'fill-extrusion-opacity': 0.85
+      }
+    }, labelLayerId);
+  }
+}
+
+// ── Route Vector Layers (OSRM GeoJSON) ──────────────────────────────
+function setupRouteLayers() {
+  if (!map) return;
+
+  // Alternatives Source & Layer
+  if (!map.getSource('route-alternatives')) {
+    map.addSource('route-alternatives', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+    map.addLayer({
+      id: 'route-alternatives-line',
+      type: 'line',
+      source: 'route-alternatives',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#64748b',
+        'line-width': 5,
+        'line-opacity': 0.65,
+        'line-dasharray': [2, 2]
+      }
+    });
+  }
+
+  // Active Route Source & Casing + Main Line Layers
+  if (!map.getSource('active-route')) {
+    map.addSource('active-route', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+
+    // Casing (Outline/Glow)
+    map.addLayer({
+      id: 'active-route-casing',
+      type: 'line',
+      source: 'active-route',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#1e40af',
+        'line-width': 9,
+        'line-opacity': 0.5
+      }
+    });
+
+    // Vibrant Route Line
+    map.addLayer({
+      id: 'active-route-line',
+      type: 'line',
+      source: 'active-route',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#3b82f6',
+        'line-width': 6,
+        'line-opacity': 0.95
+      }
+    });
+  }
+}
+
+// ── Toggle 3D Perspective Mode ──────────────────────────────────────
+window.toggle3DView = function() {
+  if (!map) return;
+  is3DMode = !is3DMode;
+  const targetPitch = is3DMode ? 58 : 0;
+  map.easeTo({
+    pitch: targetPitch,
+    duration: 800
+  });
+
+  const btn = document.getElementById('btn-toggle-3d');
+  if (btn) {
+    btn.textContent = is3DMode ? '🗺️ 2D' : '🏢 3D';
+    btn.classList.toggle('active', is3DMode);
+  }
+  showToast(is3DMode ? '🏢 3D Perspective Mode Enabled' : '🗺️ 2D Flat Mode Enabled', 'info');
+};
+
+// ── GPS Tracking & 3D Navigation Puck ───────────────────────────────
+function startLiveLocation() {
+  if (!navigator.geolocation) {
+    console.warn('Geolocation not supported by browser.');
     return;
   }
 
-
-  // ────────────────────────────────────────────────────────────────
-  // REQUEST A FRESH GPS FIX
-  // ────────────────────────────────────────────────────────────────
-
-  navigator.geolocation.getCurrentPosition(
-
-    handleGPSPosition,
-
-    handleGPSError,
-
-    {
-      enableHighAccuracy:
-        true,
-
-      timeout:
-        30000,
-
-      maximumAge:
-        0
-    }
+  locationWatchId = navigator.geolocation.watchPosition(
+    (pos) => handleGPSPosition(pos),
+    (err) => console.warn('GPS error / awaiting fix:', err.message),
+    { enableHighAccuracy: true, timeout: 25000, maximumAge: 2000 }
   );
 }
 
+function handleGPSPosition(position) {
+  const lat = position.coords.latitude;
+  const lng = position.coords.longitude;
+  const accuracy = position.coords.accuracy;
 
-// Expose GPS functions globally
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
-window.startLiveLocation =
-  startLiveLocation;
+  lastKnownGPSPosition = { latitude: lat, longitude: lng, accuracy };
+  window.lastKnownGPSPosition = lastKnownGPSPosition;
 
-window.stopLiveLocation =
-  stopLiveLocation;
+  showUserLocation(lat, lng, accuracy, false, position);
 
-window.locateUser =
-  locateUser;
-
-
-// ====================================================================
-// POTHOLE MARKERS LAYER
-// ====================================================================
-
-let patholeLayer =
-  L.layerGroup().addTo(map);
-
-window.patholeLayer = patholeLayer;
-
-// ── Create Pathole Marker ───────────────────────────────────────────
-
-function createPatholeMarker(
-  pathole
-) {
-
-  const color =
-    SEVERITY_COLORS[
-      pathole.severity
-    ] ||
-    SEVERITY_COLORS.medium;
-
-
-  const radius =
-    SEVERITY_RADIUS[
-      pathole.severity
-    ] ||
-    10;
-
-
-  const marker =
-    L.circleMarker(
-      [
-        pathole.latitude,
-        pathole.longitude
-      ],
-      {
-        radius: radius,
-
-        fillColor: color,
-
-        fillOpacity: 0.85,
-
-        color: '#ffffff',
-
-        weight: 2.5,
-
-        opacity: 0.95
-      }
-    );
-
-
-  let date = 'Unknown';
-  if (pathole.created_at) {
-    let dtStr = pathole.created_at;
-    if (typeof dtStr === 'string' && !dtStr.endsWith('Z') && !dtStr.includes('+') && !dtStr.includes('-', 10)) {
-      dtStr += 'Z';
-    }
-    const parsed = new Date(dtStr);
-    if (!isNaN(parsed.getTime())) {
-      date = parsed.toLocaleString();
-    }
+  // Hook for live navigation updates
+  if (typeof window.onNavGPSUpdate === 'function') {
+    window.onNavGPSUpdate(lat, lng, position);
   }
+}
 
+function showUserLocation(lat, lng, accuracy, centerMap = false, pos = null) {
+  if (!map) return;
 
-  let distText = '';
-
-
-  if (
-    pathole.distToRoute !==
-      undefined &&
-    pathole.distToRoute !==
-      null
-  ) {
-
-    distText =
-      `<div>📏 Distance to Route: <strong>${pathole.distToRoute.toFixed(1)} m</strong></div>`;
-  }
-
-
-  marker.bindPopup(
-    `
-    <div class="popup-title">
-      🕳️ Pathole Detected
-    </div>
-
-    <span class="popup-severity ${pathole.severity}">
-      ${pathole.severity.toUpperCase()}
-    </span>
-
-    <div class="popup-meta">
-
-      <div>
-        📍 Coords:
-        ${pathole.latitude.toFixed(5)},
-        ${pathole.longitude.toFixed(5)}
+  // Create / Update 3D Navigation User Puck
+  if (!userLocationMarker) {
+    const el = document.createElement('div');
+    el.className = 'nav-puck-3d';
+    el.innerHTML = `
+      <div class="nav-puck-halo"></div>
+      <div class="nav-puck-core" id="nav-puck-core-el">
+        <div class="nav-puck-arrow"></div>
       </div>
+    `;
 
-      ${distText}
-
-      <div>
-        📊 Reports:
-        ${pathole.report_count}
-        |
-        Confidence:
-        ${(pathole.confidence * 100).toFixed(0)}%
-      </div>
-
-      ${
-        pathole.accel_peak
-          ? `<div>⚡ Peak Accel: ${pathole.accel_peak.toFixed(1)} m/s²</div>`
-          : ''
-      }
-
-      <div>
-        📅 Date:
-        ${date}
-      </div>
-
-    </div>
-    `
-  );
-
-
-  return marker;
-}
-
-
-// ====================================================================
-// LOAD POTHOLES
-// ====================================================================
-
-async function loadPatholes() {
-
-  try {
-
-    const res =
-      await fetch(
-        '/api/patholes'
-      );
-
-
-    const data =
-      await res.json();
-
-
-    if (
-      data.patholes
-    ) {
-
-      allPatholesData =
-        data.patholes;
-
-
-      window.allPatholesData =
-        allPatholesData;
-
-
-      filterMarkers();
-
-
-      // Fit bounds only when GPS is unavailable
-
-      if (
-        !userLocationMarker &&
-        patholeLayer.getLayers().length > 0
-      ) {
-
-        const group =
-          L.featureGroup(
-            patholeLayer.getLayers()
-          );
-
-
-        map.fitBounds(
-          group.getBounds().pad(0.2)
-        );
-      }
-    }
-
-  } catch (err) {
-
-    console.error(
-      'Failed to load patholes:',
-      err
-    );
-  }
-}
-
-
-// ── Refresh ─────────────────────────────────────────────────────────
-
-function refreshMap() {
-
-  loadPatholes();
-}
-
-
-// ====================================================================
-// ROUTING & SEARCH
-// ====================================================================
-
-let currentRouteLayer =
-  null;
-
-let destinationMarker =
-  null;
-
-
-// ── Search Setup ────────────────────────────────────────────────────
-
-function setupSearch() {
-
-  const searchInput =
-    document.getElementById(
-      'map-search'
-    );
-
-
-  const suggestionsBox =
-    document.getElementById(
-      'search-suggestions'
-    );
-
-
-  let searchTimeout =
-    null;
-
-
-  if (searchInput) {
-
-    searchInput.addEventListener(
-      'input',
-      (e) => {
-
-        clearTimeout(
-          searchTimeout
-        );
-
-
-        const query =
-          e.target.value.trim();
-
-
-        if (
-          query.length < 3
-        ) {
-
-          suggestionsBox.style.display =
-            'none';
-
-          return;
-        }
-
-
-        searchTimeout =
-          setTimeout(
-            () => {
-
-              let url =
-                `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=50&lang=en`;
-
-
-              // Prioritize results near current map center
-
-              if (map) {
-
-                const center =
-                  map.getCenter();
-
-
-                url +=
-                  `&lat=${center.lat}&lon=${center.lng}`;
-              }
-
-
-              fetch(url)
-
-                .then(
-                  res =>
-                    res.json()
-                )
-
-                .then(
-                  data => {
-
-                    suggestionsBox.innerHTML =
-                      '';
-
-
-                    if (
-                      !data.features ||
-                      data.features.length === 0
-                    ) {
-
-                      suggestionsBox.innerHTML =
-                        '<div class="suggestion-item">No results found</div>';
-
-                    } else {
-
-                      data.features.forEach(
-                        feature => {
-
-                          const place =
-                            feature.properties;
-
-
-                          const coords =
-                            feature.geometry.coordinates;
-
-
-                          const lat =
-                            coords[1];
-
-
-                          const lon =
-                            coords[0];
-
-
-                          const div =
-                            document.createElement(
-                              'div'
-                            );
-
-
-                          div.className =
-                            'suggestion-item';
-
-
-                          const parts =
-                            [];
-
-
-                          if (
-                            place.name
-                          ) {
-
-                            parts.push(
-                              place.name
-                            );
-                          }
-
-
-                          if (
-                            place.street
-                          ) {
-
-                            parts.push(
-                              place.street
-                            );
-                          }
-
-
-                          if (
-                            place.district
-                          ) {
-
-                            parts.push(
-                              place.district
-                            );
-                          }
-
-
-                          if (
-                            place.city ||
-                            place.town
-                          ) {
-
-                            parts.push(
-                              place.city ||
-                              place.town
-                            );
-                          }
-
-
-                          if (
-                            place.state
-                          ) {
-
-                            parts.push(
-                              place.state
-                            );
-                          }
-
-
-                          const title =
-                            place.name ||
-                            place.street ||
-                            place.city ||
-                            place.town ||
-                            'Unknown Location';
-
-
-                          const subtitle =
-                            parts
-                              .filter(
-                                p =>
-                                  p !==
-                                  title
-                              )
-                              .slice(
-                                0,
-                                3
-                              )
-                              .join(
-                                ', '
-                              ) ||
-                            place.country ||
-                            '';
-
-
-                          div.innerHTML =
-                            `
-                            <strong>
-                              ${title}
-                            </strong>
-
-                            <br>
-
-                            <span
-                              style="
-                                font-size:0.75rem;
-                                color:var(--text-muted);
-                              "
-                            >
-                              ${subtitle}
-                            </span>
-                            `;
-
-
-                          div.addEventListener(
-                            'click',
-                            () => {
-
-                              selectDestination(
-                                lat,
-                                lon,
-                                title
-                              );
-
-
-                              suggestionsBox.style.display =
-                                'none';
-
-
-                              searchInput.value =
-                                title;
-                            }
-                          );
-
-
-                          suggestionsBox.appendChild(
-                            div
-                          );
-                        }
-                      );
-                    }
-
-
-                    suggestionsBox.style.display =
-                      'block';
-                  }
-                )
-
-                .catch(
-                  err =>
-                    console.error(
-                      'Search error:',
-                      err
-                    )
-                );
-
-            },
-            400
-          );
-      }
-    );
-
-
-    // Hide suggestions when clicking outside
-
-    document.addEventListener(
-      'click',
-      (e) => {
-
-        if (
-          !searchInput.contains(
-            e.target
-          ) &&
-          !suggestionsBox.contains(
-            e.target
-          )
-        ) {
-
-          suggestionsBox.style.display =
-            'none';
-        }
-      }
-    );
-  }
-}
-
-
-// ====================================================================
-// MAP CLICK → DESTINATION
-// ====================================================================
-
-map.on(
-  'click',
-  function(e) {
-
-    if (
-      e.originalEvent &&
-      (
-        e.originalEvent._stopped ||
-        e.originalEvent.defaultPrevented
-      )
-    ) {
-
-      return;
-    }
-
-
-    const lat =
-      e.latlng.lat;
-
-
-    const lng =
-      e.latlng.lng;
-
-
-    const defaultTitle =
-      `Selected Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
-
-
-    // Update search box
-
-    const searchInput =
-      document.getElementById(
-        'map-search'
-      );
-
-
-    if (searchInput) {
-
-      searchInput.value =
-        defaultTitle;
-    }
-
-
-    // Calculate route
-
-    selectDestination(
-      lat,
-      lng,
-      defaultTitle,
-      true
-    );
-
-
-    // Reverse geocoding
-
-    fetch(
-      `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`
-    )
-
-      .then(
-        res =>
-          res.json()
-      )
-
-      .then(
-        data => {
-
-          if (
-            data &&
-            data.features &&
-            data.features.length > 0
-          ) {
-
-            const props =
-              data.features[0].properties;
-
-
-            const title =
-              props.name ||
-              props.street ||
-              props.district ||
-              props.city ||
-              defaultTitle;
-
-
-            const destEl =
-              document.getElementById(
-                'route-dest-name'
-              );
-
-
-            if (destEl) {
-
-              destEl.textContent =
-                title;
-            }
-
-
-            if (searchInput) {
-
-              searchInput.value =
-                title;
-            }
-
-
-            if (
-              destinationMarker
-            ) {
-
-              destinationMarker.setPopupContent(
-                `
-                <div class="popup-title">
-                  🎯 Destination
-                </div>
-
-                <div
-                  class="popup-meta"
-                  style="
-                    margin-bottom:8px;
-                    line-height:1.4;
-                  "
-                >
-                  ${title}
-                </div>
-
-                <button
-                  class="btn btn-primary btn-sm"
-                  onclick="getDirections(${lat}, ${lng})"
-                  style="
-                    width:100%;
-                    padding:8px;
-                    margin-top:8px;
-                  "
-                >
-                  🗺️ Recalculate Route
-                </button>
-                `
-              );
-            }
-          }
-        }
-      )
-
-      .catch(
-        err =>
-          console.log(
-            'Reverse geocode fallback:',
-            err
-          )
-      );
-  }
-);
-
-
-// ====================================================================
-// SELECT DESTINATION
-// ====================================================================
-
-window.selectDestination =
-  function(
-    lat,
-    lon,
-    displayName,
-    autoDirections = true
-  ) {
-
-    map.setView(
-      [
-        lat,
-        lon
-      ],
-      14
-    );
-
-
-    if (
-      destinationMarker
-    ) {
-
-      map.removeLayer(
-        destinationMarker
-      );
-    }
-
-
-    destinationMarker =
-      L.marker(
-        [
-          lat,
-          lon
-        ]
-      )
+    userLocationMarker = new maplibregl.Marker({ element: el, rotationAlignment: 'map' })
+      .setLngLat([lng, lat])
       .addTo(map);
 
+    if (centerMap) {
+      map.flyTo({ center: [lng, lat], zoom: 15, duration: 1000 });
+    }
+  } else {
+    userLocationMarker.setLngLat([lng, lat]);
+  }
 
-    destinationMarker.bindPopup(
-      `
-      <div class="popup-title">
-        🎯 Destination
-      </div>
+  // Update orientation arrow if heading available
+  if (pos && pos.coords && pos.coords.heading !== null && !isNaN(pos.coords.heading)) {
+    const coreEl = document.getElementById('nav-puck-core-el');
+    if (coreEl) {
+      coreEl.style.transform = `rotate(${pos.coords.heading}deg)`;
+    }
+  }
+}
 
-      <div
-        class="popup-meta"
-        style="
-          margin-bottom:8px;
-          line-height:1.4;
-        "
-      >
-        ${
-          displayName ||
-          'Selected Destination'
+window.locateUser = function() {
+  if (lastKnownGPSPosition && map) {
+    map.flyTo({
+      center: [lastKnownGPSPosition.longitude, lastKnownGPSPosition.latitude],
+      zoom: 16,
+      pitch: is3DMode ? 55 : 0,
+      duration: 1000
+    });
+    showToast('📍 Centered on your current location', 'info');
+  } else {
+    showToast('📍 Waiting for GPS position...', 'warning');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        handleGPSPosition(pos);
+        if (map) {
+          map.flyTo({
+            center: [pos.coords.longitude, pos.coords.latitude],
+            zoom: 16,
+            duration: 1000
+          });
         }
-      </div>
-
-      <button
-        class="btn btn-primary btn-sm"
-        onclick="getDirections(${lat}, ${lon})"
-        style="
-          width:100%;
-          padding:8px;
-          margin-top:8px;
-        "
-      >
-        🗺️ Get Directions
-      </button>
-      `
+      },
+      (err) => showToast('Could not get GPS location. Please allow location permissions.', 'error'),
+      { enableHighAccuracy: true, timeout: 15000 }
     );
+  }
+};
 
+// ── Load Pothole Data from Server ───────────────────────────────────
+async function loadPatholes() {
+  try {
+    const res = await fetch('/api/patholes');
+    const data = await res.json();
+    if (data.patholes) {
+      allPatholesData = data.patholes;
+      window.allPatholesData = allPatholesData;
+      filterMarkers();
+    }
+  } catch (err) {
+    console.error('Failed to load potholes:', err);
+  }
+}
 
-    const destNameEl =
-      document.getElementById(
-        'route-dest-name'
+window.refreshMap = function() {
+  loadPatholes();
+  showToast('🔄 Map and pothole data refreshed', 'info');
+};
+
+// ── Pothole Markers Rendering (Clean Preview vs Active Nav) ─────────
+window.filterMarkers = function() {
+  // Clear any existing DOM pothole markers
+  activePotholeMarkers.forEach(m => m.remove());
+  activePotholeMarkers = [];
+
+  const activeRouteCoords = currentRouteCoordinates || (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
+
+  let routePotholes = [];
+  if (activeRouteCoords && activeRouteCoords.length > 0) {
+    routePotholes = filterPotholesAlongRoute(
+      activeRouteCoords,
+      window.ROUTE_PROXIMITY_THRESHOLD_METERS
+    );
+  }
+
+  const countEl = document.getElementById('route-potholes-count');
+  if (countEl) {
+    countEl.textContent = routePotholes.length;
+  }
+
+  /*
+   * USER SPECIFICATION:
+   * 1. Browse / preview mode: Keep map clean (potholes hidden).
+   * 2. Live Navigation mode: Render detected pothole markers along the navigation route!
+   */
+  const isNavigating = typeof NAV !== 'undefined' && NAV.isNavigating;
+  if (isNavigating && routePotholes.length > 0 && map) {
+    routePotholes.forEach(p => {
+      const markerEl = document.createElement('div');
+      markerEl.className = `pothole-marker-3d severity-${p.severity}`;
+      markerEl.innerHTML = `<span>🕳️</span>`;
+      markerEl.title = `${p.severity.toUpperCase()} Pothole`;
+
+      const popup = new maplibregl.Popup({ offset: 15 }).setHTML(`
+        <div style="font-weight:700;font-size:0.95rem;margin-bottom:4px;">🕳️ Pothole Detected</div>
+        <div style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:${SEVERITY_COLORS[p.severity] || '#f59e0b'};">
+          ${p.severity} Severity
+        </div>
+        <div style="font-size:0.78rem;color:#64748b;margin-top:6px;line-height:1.4;">
+          📍 ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}<br>
+          📊 Reports: <strong>${p.report_count || 1}</strong> (${Math.round((p.confidence || 0.8) * 100)}% conf)
+          ${p.distToRoute ? `<br>📏 <strong>${p.distToRoute.toFixed(1)}m</strong> from route` : ''}
+        </div>
+      `);
+
+      const marker = new maplibregl.Marker({ element: markerEl })
+        .setLngLat([p.longitude, p.latitude])
+        .setPopup(popup)
+        .addTo(map);
+
+      activePotholeMarkers.push(marker);
+    });
+  }
+};
+
+function filterPotholesAlongRoute(routeCoords, thresholdMeters) {
+  if (!routeCoords || routeCoords.length === 0) return [];
+
+  const showLow = document.getElementById('filter-low')?.checked ?? true;
+  const showMed = document.getElementById('filter-medium')?.checked ?? true;
+  const showHigh = document.getElementById('filter-high')?.checked ?? true;
+
+  const result = [];
+  allPatholesData.forEach(p => {
+    if (p.is_active === false) return;
+    if (p.severity === 'low' && !showLow) return;
+    if (p.severity === 'medium' && !showMed) return;
+    if (p.severity === 'high' && !showHigh) return;
+
+    let minDist = Infinity;
+    for (let i = 0; i < routeCoords.length - 1; i++) {
+      const p1 = routeCoords[i];
+      const p2 = routeCoords[i + 1];
+      const d = getDistanceToSegmentMeters(
+        p.latitude, p.longitude,
+        p1.lat || p1[1], p1.lng || p1[0],
+        p2.lat || p2[1], p2.lng || p2[0]
       );
-
-
-    if (destNameEl) {
-
-      destNameEl.textContent =
-        displayName ||
-        'Selected Location';
+      if (d < minDist) minDist = d;
     }
 
-
-    if (autoDirections) {
-
-      getDirections(
-        lat,
-        lon
-      );
+    if (minDist <= thresholdMeters) {
+      p.distToRoute = minDist;
+      result.push(p);
     }
-  };
+  });
 
+  return result;
+}
 
-// ====================================================================
-// GET DIRECTIONS
-// ====================================================================
+// ── Destination & OSRM 3D Routing ───────────────────────────────────
+async function setDestinationFromCoords(lat, lng, name = 'Selected Location') {
+  if (destinationMarker) {
+    destinationMarker.remove();
+    destinationMarker = null;
+  }
 
-window.routingControl =
-  null;
+  const pinEl = document.createElement('div');
+  pinEl.className = 'dest-marker-3d';
+  pinEl.innerHTML = '🎯';
 
+  destinationMarker = new maplibregl.Marker({ element: pinEl, anchor: 'bottom' })
+    .setLngLat([lng, lat])
+    .addTo(map);
 
-window.getDirections =
-  function(
-    destLat,
-    destLon
-  ) {
+  const startLat = lastKnownGPSPosition ? lastKnownGPSPosition.latitude : 12.971599;
+  const startLng = lastKnownGPSPosition ? lastKnownGPSPosition.longitude : 77.594566;
 
-    // User GPS is required
+  saveRecent(name, lat, lng);
+  await calculateOSRMRoute(startLat, startLng, lat, lng, name);
+}
 
-    if (
-      !userLocationMarker
-    ) {
+async function calculateOSRMRoute(startLat, startLng, destLat, destLng, destName) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson&steps=true&alternatives=true`;
+    const res = await fetch(url);
+    const data = await res.json();
 
-      console.log(
-        'User location unknown. Requesting GPS...'
-      );
-
-
-      locateUser();
-
-
-      setTimeout(
-        () => {
-
-          if (
-            userLocationMarker
-          ) {
-
-            getDirections(
-              destLat,
-              destLon
-            );
-
-          } else {
-
-            alert(
-              'Your current GPS location is not available. Please allow location permission and wait for GPS.'
-            );
-          }
-
-        },
-        1500
-      );
-
-
+    if (!data.routes || data.routes.length === 0) {
+      showToast('Could not calculate a driving route to this destination.', 'error');
       return;
     }
 
-
-    const userLat =
-      userLocationMarker
-        .getLatLng()
-        .lat;
-
-
-    const userLon =
-      userLocationMarker
-        .getLatLng()
-        .lng;
-
-
-    if (
-      destinationMarker
-    ) {
-
-      destinationMarker.closePopup();
-    }
-
-
-    // Remove old route
-
-    if (
-      window.routingControl
-    ) {
-
-      map.removeControl(
-        window.routingControl
-      );
-
-      window.routingControl =
-        null;
-    }
-
-
-    if (
-      currentRouteLayer
-    ) {
-
-      map.removeLayer(
-        currentRouteLayer
-      );
-
-      currentRouteLayer =
-        null;
-    }
-
-
-    // Create route
-
+    allComputedRoutes = data.routes;
+    window.allComputedRoutes = allComputedRoutes;
+    selectedRouteIndex = 0;
     window.selectedRouteIndex = 0;
-    window.allComputedRoutes = [];
 
-    // Create route with alternative routes enabled
-    window.routingControl = L.Routing.control({
-      waypoints: [
-        L.latLng(userLat, userLon),
-        L.latLng(destLat, destLon)
-      ],
-      routeWhileDragging: false,
-      showAlternatives: true,
-      altLineOptions: {
-        styles: [
-          { color: '#64748b', weight: 5, opacity: 0.6, dashArray: '6, 8' }
-        ]
-      },
-      lineOptions: {
-        styles: [
-          { color: '#2563eb', weight: 6, opacity: 0.9 }
-        ]
-      },
-      createMarker: function() { return null; }
-    }).addTo(map);
+    const primaryRoute = data.routes[0];
+    displayRouteOnMap(primaryRoute, destName);
+    renderRouteAlternatives(data.routes);
 
-    // Route found
-    window.routingControl.on('routesfound', function(e) {
-      window.allComputedRoutes = e.routes || [];
-      window.selectedRouteIndex = 0;
-      const route = e.routes[0];
+    const autoToggle = document.getElementById('auto-nav-toggle');
+    if (autoToggle && autoToggle.checked && typeof window.startNavigation === 'function') {
+      window.startNavigation(destLat, destLng, destName);
+    }
+  } catch (err) {
+    console.error('Routing error:', err);
+    showToast('Failed to fetch route. Check internet connection.', 'error');
+  }
+}
 
-      currentRouteCoordinates = route.coordinates;
-      if (window.NAV) {
-        window.NAV.currentRoute = route.coordinates;
-        window.NAV.routeSteps = route.instructions || [];
-        if (route.summary) {
-          window.NAV.totalDistance = route.summary.totalDistance || 0;
-          window.NAV.totalTime = route.summary.totalTime || 0;
-        }
-      }
+function displayRouteOnMap(route, destName) {
+  if (!map || !route) return;
 
-      const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
-      const travelTimeMin = Math.round(route.summary.totalTime / 60);
-      const etaStr = travelTimeMin >= 60
-        ? Math.floor(travelTimeMin / 60) + 'h ' + (travelTimeMin % 60) + 'm'
-        : travelTimeMin + ' min';
+  // Convert GeoJSON coords [[lng, lat]] into {lat, lng} array
+  currentRouteCoordinates = route.geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+  window.currentRouteCoordinates = currentRouteCoordinates;
 
-      // Fit route
-      const bounds = L.latLngBounds(route.coordinates);
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+  if (window.NAV) {
+    window.NAV.currentRoute = currentRouteCoordinates;
+    window.NAV.routeSteps = route.legs?.[0]?.steps || [];
+    window.NAV.totalDistance = route.distance || 0;
+    window.NAV.totalTime = route.duration || 0;
+    window.NAV.destLat = currentRouteCoordinates[currentRouteCoordinates.length - 1].lat;
+    window.NAV.destLon = currentRouteCoordinates[currentRouteCoordinates.length - 1].lng;
+    window.NAV.destName = destName || 'Destination';
+  }
 
-      // Route information
-      const routeInfo = document.getElementById('route-info');
-      const routeDistance = document.getElementById('route-distance');
-      const routeEta = document.getElementById('route-eta');
-      const startNameEl = document.getElementById('route-start-name');
-
-      if (routeDistance) routeDistance.textContent = distanceKm;
-      if (routeEta) routeEta.textContent = etaStr;
-      if (startNameEl) startNameEl.textContent = 'Current GPS Location';
-      if (routeInfo) routeInfo.style.display = 'flex';
-
-      // Render alternative routes bar if multiple options found
-      renderRouteAlternatives(e.routes);
-
-      // Hide map click hint
-      const hintEl = document.getElementById('map-click-hint');
-      if (hintEl) hintEl.classList.add('hidden');
-
-      // Filter potholes along route
-      filterMarkers();
-
-      const routePotholes = filterPotholesAlongRoute(
-        currentRouteCoordinates,
-        window.ROUTE_PROXIMITY_THRESHOLD_METERS
-      );
-
-      // Debounced Toast to prevent multi-firing
-      if (window._routeFoundToastTimer) {
-        clearTimeout(window._routeFoundToastTimer);
-      }
-      window._routeFoundToastTimer = setTimeout(() => {
-        if (typeof showToast === 'function') {
-          if (routePotholes.length > 0) {
-            showToast(
-              `⚠️ ${routePotholes.length} pothole(s) detected along selected route!`,
-              'warning'
-            );
-          } else {
-            showToast(
-              `✅ Route clear! No potholes detected along selected route.`,
-              'success'
-            );
-          }
-        }
-      }, 300);
+  // Update active-route source GeoJSON
+  const activeSource = map.getSource('active-route');
+  if (activeSource) {
+    activeSource.setData({
+      type: 'Feature',
+      geometry: route.geometry,
+      properties: {}
     });
+  }
 
-    // Routing error
-    window.routingControl.on('routingerror', function(e) {
-      console.error('Routing error:', e);
-      alert('Could not calculate a route to the selected destination. Please try another location.');
-    });
-  };
+  // Update distance / ETA UI
+  const distanceKm = (route.distance / 1000).toFixed(1);
+  const travelTimeMin = Math.round(route.duration / 60);
+  const etaStr = travelTimeMin >= 60
+    ? Math.floor(travelTimeMin / 60) + 'h ' + (travelTimeMin % 60) + 'm'
+    : travelTimeMin + ' min';
 
-/** Render interactive pills for fastest vs alternative/shortest routes */
+  const routeDistance = document.getElementById('route-distance');
+  const routeEta = document.getElementById('route-eta');
+  const startNameEl = document.getElementById('route-start-name');
+  const destNameEl = document.getElementById('route-dest-name');
+  const routeInfo = document.getElementById('route-info');
+  const startBtn = document.getElementById('btn-start-nav');
+  const hintEl = document.getElementById('map-click-hint');
+
+  if (routeDistance) routeDistance.textContent = distanceKm;
+  if (routeEta) routeEta.textContent = etaStr;
+  if (startNameEl) startNameEl.textContent = 'Current GPS Location';
+  if (destNameEl) destNameEl.textContent = destName || 'Selected Destination';
+  if (routeInfo) routeInfo.style.display = 'flex';
+  if (startBtn) startBtn.style.display = 'inline-flex';
+  if (hintEl) hintEl.classList.add('hidden');
+
+  // Fit camera bounds around route in 2D preview
+  const bounds = new maplibregl.LngLatBounds();
+  route.geometry.coordinates.forEach(c => bounds.extend(c));
+  map.fitBounds(bounds, { padding: 60, maxZoom: 16, pitch: 0 });
+
+  filterMarkers();
+}
+
 function renderRouteAlternatives(routes) {
   const bar = document.getElementById('route-alternatives-bar');
   if (!bar) return;
@@ -1670,92 +540,61 @@ function renderRouteAlternatives(routes) {
   bar.innerHTML = '';
   bar.style.display = 'flex';
 
-  // Sort or identify fastest vs shortest
+  // Find fastest vs shortest
   let minDistanceIdx = 0;
   let minTimeIdx = 0;
   routes.forEach((r, i) => {
-    if (r.summary.totalDistance < routes[minDistanceIdx].summary.totalDistance) minDistanceIdx = i;
-    if (r.summary.totalTime < routes[minTimeIdx].summary.totalTime) minTimeIdx = i;
+    if (r.distance < routes[minDistanceIdx].distance) minDistanceIdx = i;
+    if (r.duration < routes[minTimeIdx].duration) minTimeIdx = i;
   });
 
   routes.forEach((rt, index) => {
-    const distKm = (rt.summary.totalDistance / 1000).toFixed(1);
-    const timeMin = Math.round(rt.summary.totalTime / 60);
+    const distKm = (rt.distance / 1000).toFixed(1);
+    const timeMin = Math.round(rt.duration / 60);
     const timeStr = timeMin >= 60 ? Math.floor(timeMin / 60) + 'h ' + (timeMin % 60) + 'm' : timeMin + ' min';
 
     let badgeLabel = index === minTimeIdx ? '⚡ Fastest' : (index === minDistanceIdx ? '📏 Shortest' : `Alt ${index + 1}`);
 
     const chip = document.createElement('button');
     chip.type = 'button';
-    chip.className = `route-alt-chip ${index === window.selectedRouteIndex ? 'active' : ''}`;
+    chip.className = `route-alt-chip ${index === 0 ? 'active' : ''}`;
     chip.innerHTML = `<span class="alt-badge">${badgeLabel}</span> <span class="alt-time">${timeStr}</span> <span class="alt-dist">(${distKm} km)</span>`;
     chip.onclick = () => window.selectAlternativeRoute(index);
     bar.appendChild(chip);
   });
 }
 
-/** User clicked an alternative route */
 window.selectAlternativeRoute = function(index) {
-  if (!window.allComputedRoutes || !window.allComputedRoutes[index]) return;
+  if (!allComputedRoutes || !allComputedRoutes[index]) return;
+  selectedRouteIndex = index;
   window.selectedRouteIndex = index;
-  const route = window.allComputedRoutes[index];
+  const route = allComputedRoutes[index];
+  const destName = document.getElementById('route-dest-name')?.textContent || 'Destination';
 
-  currentRouteCoordinates = route.coordinates;
-  if (window.NAV) {
-    window.NAV.currentRoute = route.coordinates;
-    window.NAV.routeSteps = route.instructions || [];
-    if (route.summary) {
-      window.NAV.totalDistance = route.summary.totalDistance || 0;
-      window.NAV.totalTime = route.summary.totalTime || 0;
-    }
-  }
+  displayRouteOnMap(route, destName);
 
-  const distanceKm = (route.summary.totalDistance / 1000).toFixed(1);
-  const travelTimeMin = Math.round(route.summary.totalTime / 60);
-  const etaStr = travelTimeMin >= 60 ? Math.floor(travelTimeMin / 60) + 'h ' + (travelTimeMin % 60) + 'm' : travelTimeMin + ' min';
-
-  const routeDistance = document.getElementById('route-distance');
-  const routeEta = document.getElementById('route-eta');
-  if (routeDistance) routeDistance.textContent = distanceKm;
-  if (routeEta) routeEta.textContent = etaStr;
-
-  const countEl = document.getElementById('route-potholes-count');
-  const routePotholes = filterPotholesAlongRoute(route.coordinates, window.ROUTE_PROXIMITY_THRESHOLD_METERS);
-  if (countEl) countEl.textContent = routePotholes.length;
-
-  // Update active styling on alternative chips
   document.querySelectorAll('.route-alt-chip').forEach((el, idx) => {
     if (idx === index) el.classList.add('active');
     else el.classList.remove('active');
   });
-
-  // Re-style route lines so selected one is prominent
-  if (window.routingControl && window.routingControl._routes) {
-    window.routingControl._routes.forEach((layer, idx) => {
-      if (layer.line) {
-        if (idx === index) {
-          layer.line.setStyle({ color: '#2563eb', opacity: 0.9, weight: 6, dashArray: null });
-          layer.line.bringToFront();
-        } else {
-          layer.line.setStyle({ color: '#64748b', opacity: 0.6, weight: 5, dashArray: '6, 8' });
-        }
-      }
-    });
-  }
-
-  if (typeof showToast === 'function') {
-    showToast(`Selected Route: ${distanceKm} km • ${etaStr}`, 'info');
-  }
 };
-
-// ====================================================================
-// CLEAR ROUTE
-// ====================================================================
 
 window.clearRoute = function() {
   currentRouteCoordinates = null;
-  window.allComputedRoutes = [];
-  window.selectedRouteIndex = 0;
+  allComputedRoutes = [];
+  selectedRouteIndex = 0;
+
+  if (destinationMarker) {
+    destinationMarker.remove();
+    destinationMarker = null;
+  }
+
+  if (map) {
+    const activeSource = map.getSource('active-route');
+    if (activeSource) activeSource.setData({ type: 'FeatureCollection', features: [] });
+    const altSource = map.getSource('route-alternatives');
+    if (altSource) altSource.setData({ type: 'FeatureCollection', features: [] });
+  }
 
   const bar = document.getElementById('route-alternatives-bar');
   if (bar) {
@@ -1763,793 +602,198 @@ window.clearRoute = function() {
     bar.innerHTML = '';
   }
 
-  if (window.routingControl) {
-    map.removeControl(window.routingControl);
-    window.routingControl = null;
-  }
-
-
-    if (
-      currentRouteLayer
-    ) {
-
-      map.removeLayer(
-        currentRouteLayer
-      );
-
-      currentRouteLayer =
-        null;
-    }
-
-
-    if (
-      destinationMarker
-    ) {
-
-      map.removeLayer(
-        destinationMarker
-      );
-
-      destinationMarker =
-        null;
-    }
-
-
-    const routeInfo =
-      document.getElementById(
-        'route-info'
-      );
-
-
-    if (routeInfo) {
-
-      routeInfo.style.display =
-        'none';
-    }
-
-
-    const hintEl =
-      document.getElementById(
-        'map-click-hint'
-      );
-
-
-    if (hintEl) {
-
-      hintEl.classList.remove(
-        'hidden'
-      );
-    }
-
-
-    const searchInput =
-      document.getElementById(
-        'map-search'
-      );
-
-
-    if (searchInput) {
-
-      searchInput.value =
-        '';
-    }
-
-
-    filterMarkers();
-  };
-
-
-// ====================================================================
-// ROUTE PROXIMITY
-// ====================================================================
-
-function getDistanceToSegmentMeters(
-  pLat,
-  pLng,
-  aLat,
-  aLng,
-  bLat,
-  bLng
-) {
-
-  const midLatRad =
-    (
-      (aLat + bLat) /
-      2
-    ) *
-    (
-      Math.PI /
-      180
-    );
-
-
-  const cosMidLat =
-    Math.cos(
-      midLatRad
-    );
-
-
-  const DEG_TO_M_LAT =
-    111320;
-
-
-  const DEG_TO_M_LNG =
-    111320 *
-    cosMidLat;
-
-
-  const ax =
-    0;
-
-
-  const ay =
-    0;
-
-
-  const bx =
-    (
-      bLng -
-      aLng
-    ) *
-    DEG_TO_M_LNG;
-
-
-  const by =
-    (
-      bLat -
-      aLat
-    ) *
-    DEG_TO_M_LAT;
-
-
-  const px =
-    (
-      pLng -
-      aLng
-    ) *
-    DEG_TO_M_LNG;
-
-
-  const py =
-    (
-      pLat -
-      aLat
-    ) *
-    DEG_TO_M_LAT;
-
-
-  const dx =
-    bx -
-    ax;
-
-
-  const dy =
-    by -
-    ay;
-
-
-  const lenSq =
-    dx * dx +
-    dy * dy;
-
-
-  let t =
-    0;
-
-
-  if (
-    lenSq > 0
-  ) {
-
-    t =
-      (
-        px * dx +
-        py * dy
-      ) /
-      lenSq;
-
-
-    t =
-      Math.max(
-        0,
-        Math.min(
-          1,
-          t
-        )
-      );
-  }
-
-
-  const projX =
-    ax +
-    t * dx;
-
-
-  const projY =
-    ay +
-    t * dy;
-
-
-  const distSq =
-    (
-      px -
-      projX
-    ) *
-    (
-      px -
-      projX
-    ) +
-
-    (
-      py -
-      projY
-    ) *
-    (
-      py -
-      projY
-    );
-
-
-  return Math.sqrt(
-    distSq
-  );
-}
-
-
-// ── Minimum Distance to Route ───────────────────────────────────────
-
-function getMinDistanceToRoute(
-  pLat,
-  pLng,
-  routeCoords
-) {
-
-  if (
-    !routeCoords ||
-    routeCoords.length < 2
-  ) {
-
-    return Infinity;
-  }
-
-
-  let minDistance =
-    Infinity;
-
-
-  for (
-    let i = 0;
-    i <
-      routeCoords.length - 1;
-    i++
-  ) {
-
-    const p1 =
-      routeCoords[i];
-
-
-    const p2 =
-      routeCoords[
-        i + 1
-      ];
-
-
-    const d =
-      getDistanceToSegmentMeters(
-        pLat,
-        pLng,
-
-        p1.lat,
-        p1.lng,
-
-        p2.lat,
-        p2.lng
-      );
-
-
-    if (
-      d <
-      minDistance
-    ) {
-
-      minDistance =
-        d;
-
-
-      if (
-        minDistance < 1
-      ) {
-
-        break;
-      }
-    }
-  }
-
-
-  return minDistance;
-}
-
-
-// ── Filter Potholes Along Route ─────────────────────────────────────
-
-function filterPotholesAlongRoute(
-  routeCoords,
-  thresholdMeters
-) {
-
-  if (
-    !routeCoords ||
-    routeCoords.length === 0
-  ) {
-
-    return [];
-  }
-
-
-  const showLow =
-    document.getElementById(
-      'filter-low'
-    )?.checked ??
-    true;
-
-
-  const showMed =
-    document.getElementById(
-      'filter-medium'
-    )?.checked ??
-    true;
-
-
-  const showHigh =
-    document.getElementById(
-      'filter-high'
-    )?.checked ??
-    true;
-
-
-  const routePotholes =
-    [];
-
-
-  allPatholesData.forEach(
-    p => {
-
-      if (
-        !p.is_active
-      ) {
-
+  const routeInfo = document.getElementById('route-info');
+  if (routeInfo) routeInfo.style.display = 'none';
+
+  const hintEl = document.getElementById('map-click-hint');
+  if (hintEl) hintEl.classList.remove('hidden');
+
+  const searchInput = document.getElementById('map-search');
+  if (searchInput) searchInput.value = '';
+
+  filterMarkers();
+};
+
+// ── Search & Autocomplete ───────────────────────────────────────────
+function setupSearch() {
+  const searchInput = document.getElementById('map-search');
+  const suggestionsBox = document.getElementById('search-suggestions');
+  let searchTimeout = null;
+
+  if (searchInput && suggestionsBox) {
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      const query = e.target.value.trim();
+      if (query.length < 3) {
+        suggestionsBox.style.display = 'none';
         return;
       }
 
-
-      if (
-        p.severity ===
-          'low' &&
-        !showLow
-      ) {
-
-        return;
-      }
-
-
-      if (
-        p.severity ===
-          'medium' &&
-        !showMed
-      ) {
-
-        return;
-      }
-
-
-      if (
-        p.severity ===
-          'high' &&
-        !showHigh
-      ) {
-
-        return;
-      }
-
-
-      const dist =
-        getMinDistanceToRoute(
-          p.latitude,
-          p.longitude,
-          routeCoords
-        );
-
-
-      if (
-        dist <=
-        thresholdMeters
-      ) {
-
-        p.distToRoute =
-          dist;
-
-
-        routePotholes.push(
-          p
-        );
-      }
-    }
-  );
-
-
-  return routePotholes;
-}
-
-
-// ── Filter Markers ──────────────────────────────────────────────────
-
-window.filterMarkers =
-  function() {
-
-    if (patholeLayer) {
-      patholeLayer.clearLayers();
-    }
-
-    const activeRouteCoords =
-      currentRouteCoordinates ||
-      (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
-
-    if (
-      !activeRouteCoords ||
-      activeRouteCoords.length === 0
-    ) {
-
-      const countEl =
-        document.getElementById(
-          'route-potholes-count'
-        );
-
-      if (countEl) {
-
-        countEl.textContent =
-          '0';
-      }
-
-      return;
-    }
-
-    const routePotholes =
-      filterPotholesAlongRoute(
-        activeRouteCoords,
-        window.ROUTE_PROXIMITY_THRESHOLD_METERS
-      );
-
-    const countEl =
-      document.getElementById(
-        'route-potholes-count'
-      );
-
-    if (countEl) {
-
-      countEl.textContent =
-        routePotholes.length;
-    }
-
-    /*
-     * Main Map page:
-     * - Do NOT display pothole markers during normal browse / preview mode (keeps the map clean).
-     * - DO display the detected pothole marks along the route as soon as the user starts navigating (NAV.isNavigating === true).
-     */
-    const isNavigating = typeof NAV !== 'undefined' && NAV.isNavigating;
-    if (isNavigating && routePotholes.length > 0) {
-      routePotholes.forEach(p => {
-        const marker = createPatholeMarker(p);
-        if (marker && patholeLayer) {
-          marker.addTo(patholeLayer);
+      searchTimeout = setTimeout(async () => {
+        try {
+          const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=8&lang=en`;
+          const res = await fetch(url);
+          const data = await res.json();
+          if (data.features && data.features.length > 0) {
+            renderSearchSuggestions(data.features);
+          } else {
+            suggestionsBox.style.display = 'none';
+          }
+        } catch (err) {
+          console.warn('Geocoding error:', err);
         }
-      });
-    }
-  };
+      }, 300);
+    });
 
+    document.addEventListener('click', (e) => {
+      if (!searchInput.contains(e.target) && !suggestionsBox.contains(e.target)) {
+        suggestionsBox.style.display = 'none';
+      }
+    });
+  }
+}
 
+function renderSearchSuggestions(features) {
+  const box = document.getElementById('search-suggestions');
+  if (!box) return;
+  box.innerHTML = '';
 
-// ====================================================================
-// MUTE / AUDIO WARNINGS
-// ====================================================================
+  features.forEach(f => {
+    const coords = f.geometry.coordinates; // [lng, lat]
+    const p = f.properties;
+    const mainText = p.name || p.street || 'Location';
+    const subText = [p.city, p.state, p.country].filter(Boolean).join(', ');
 
-window.toggleMute =
-  function() {
+    const item = document.createElement('div');
+    item.className = 'suggestion-item';
+    item.innerHTML = `
+      <div class="sugg-main">📍 ${mainText}</div>
+      <div class="sugg-sub">${subText}</div>
+    `;
+    item.onclick = () => {
+      const searchInput = document.getElementById('map-search');
+      if (searchInput) searchInput.value = `${mainText}, ${subText}`;
+      box.style.display = 'none';
+      setDestinationFromCoords(coords[1], coords[0], mainText);
+    };
+    box.appendChild(item);
+  });
 
-    isMuted =
-      !isMuted;
+  box.style.display = 'block';
+}
 
+// ── Recent & Favourite Destinations ─────────────────────────────────
+const LS_RECENT = 'pp_recent_destinations';
+const LS_FAVS = 'pp_fav_destinations';
 
-    const btn =
-      document.getElementById(
-        'btn-mute'
-      );
+function getRecent() {
+  try { return JSON.parse(localStorage.getItem(LS_RECENT)) || []; } catch { return []; }
+}
+function getFavs() {
+  try { return JSON.parse(localStorage.getItem(LS_FAVS)) || []; } catch { return []; }
+}
+function saveRecent(name, lat, lng) {
+  let list = getRecent().filter(item => item.name !== name);
+  list.unshift({ name, lat, lng });
+  if (list.length > 6) list = list.slice(0, 6);
+  localStorage.setItem(LS_RECENT, JSON.stringify(list));
+}
 
+window.toggleRecentPanel = function() {
+  const rp = document.getElementById('recent-dest-panel');
+  const fp = document.getElementById('fav-dest-panel');
+  if (fp) fp.style.display = 'none';
+  if (!rp) return;
 
-    if (btn) {
+  if (rp.style.display === 'block') {
+    rp.style.display = 'none';
+  } else {
+    renderDestList('recent-dest-list', getRecent(), false);
+    rp.style.display = 'block';
+  }
+};
 
-      btn.textContent =
-        isMuted
-          ? '🔇'
-          : '🔊';
+window.toggleFavPanel = function() {
+  const fp = document.getElementById('fav-dest-panel');
+  const rp = document.getElementById('recent-dest-panel');
+  if (rp) rp.style.display = 'none';
+  if (!fp) return;
 
+  if (fp.style.display === 'block') {
+    fp.style.display = 'none';
+  } else {
+    renderDestList('fav-dest-list', getFavs(), true);
+    fp.style.display = 'block';
+  }
+};
 
-      btn.title =
-        isMuted
-          ? 'Unmute Audio Warnings'
-          : 'Mute Audio Warnings';
-    }
-  };
-
-
-// ── Proximity Warning ───────────────────────────────────────────────
-
-function checkProximity(
-  lat,
-  lng
-) {
-
-  if (
-    isMuted ||
-    allPatholesData.length === 0
-  ) {
-
+function renderDestList(containerId, list, isFav) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  if (!list || list.length === 0) {
+    c.innerHTML = `<div style="padding:10px;font-size:0.8rem;color:#94a3b8;text-align:center;">No ${isFav ? 'favourites' : 'recent destinations'} yet.</div>`;
     return;
   }
-
-
-  allPatholesData.forEach(
-    p => {
-
-      const dist =
-        getDistance(
-          lat,
-          lng,
-          p.latitude,
-          p.longitude
-        );
-
-
-      if (
-        dist <= 50
-      ) {
-
-        if (
-          !alertedPatholes.has(
-            p.id
-          )
-        ) {
-
-          alertedPatholes.add(
-            p.id
-          );
-
-
-          playAlertSound();
-
-
-          setTimeout(
-            () => {
-
-              speakAlert(
-                `Warning: ${p.severity} severity pathole ahead.`
-              );
-
-            },
-            400
-          );
-        }
-
-      } else if (
-        dist > 100
-      ) {
-
-        alertedPatholes.delete(
-          p.id
-        );
-      }
-    }
-  );
+  c.innerHTML = '';
+  list.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'dest-item';
+    row.innerHTML = `<span>${isFav ? '⭐' : '🕒'} ${item.name}</span>`;
+    row.onclick = () => {
+      document.getElementById('recent-dest-panel').style.display = 'none';
+      document.getElementById('fav-dest-panel').style.display = 'none';
+      setDestinationFromCoords(item.lat, item.lng, item.name);
+    };
+    c.appendChild(row);
+  });
 }
 
-
-// ── Distance Calculation ────────────────────────────────────────────
-
-function getDistance(
-  lat1,
-  lon1,
-  lat2,
-  lon2
-) {
-
-  const R =
-    6371e3;
-
-
-  const phi1 =
-    lat1 *
-    Math.PI /
-    180;
-
-
-  const phi2 =
-    lat2 *
-    Math.PI /
-    180;
-
-
-  const deltaPhi =
-    (
-      lat2 -
-      lat1
-    ) *
-    Math.PI /
-    180;
-
-
-  const deltaLambda =
-    (
-      lon2 -
-      lon1
-    ) *
-    Math.PI /
-    180;
-
-
-  const a =
-
-    Math.sin(
-      deltaPhi / 2
-    ) *
-    Math.sin(
-      deltaPhi / 2
-    ) +
-
-    Math.cos(
-      phi1
-    ) *
-    Math.cos(
-      phi2
-    ) *
-
-    Math.sin(
-      deltaLambda / 2
-    ) *
-    Math.sin(
-      deltaLambda / 2
-    );
-
-
-  const c =
-    2 *
-    Math.atan2(
-      Math.sqrt(a),
-      Math.sqrt(
-        1 - a
-      )
-    );
-
-
+// ── Math & Spatial Helpers ──────────────────────────────────────────
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
-
-// ── Alert Sound ─────────────────────────────────────────────────────
-
-function playAlertSound() {
-
-  try {
-
-    const audioCtx =
-      new (
-        window.AudioContext ||
-        window.webkitAudioContext
-      )();
-
-
-    const oscillator =
-      audioCtx.createOscillator();
-
-
-    const gainNode =
-      audioCtx.createGain();
-
-
-    oscillator.connect(
-      gainNode
-    );
-
-
-    gainNode.connect(
-      audioCtx.destination
-    );
-
-
-    oscillator.type =
-      'sine';
-
-
-    oscillator.frequency.setValueAtTime(
-      880,
-      audioCtx.currentTime
-    );
-
-
-    gainNode.gain.setValueAtTime(
-      0.15,
-      audioCtx.currentTime
-    );
-
-
-    oscillator.start();
-
-
-    oscillator.stop(
-      audioCtx.currentTime +
-      0.35
-    );
-
-  } catch (e) {
-
-    console.error(
-      'AudioContext failed:',
-      e
-    );
-  }
+function getDistanceToSegmentMeters(px, py, x1, y1, x2, y2) {
+  const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+  if (l2 === 0) return haversineMeters(px, py, x1, y1);
+  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  const projX = x1 + t * (x2 - x1);
+  const projY = y1 + t * (y2 - y1);
+  return haversineMeters(px, py, projX, projY);
 }
 
+// ── UI Toast & Audio Mute ───────────────────────────────────────────
+window.toggleMute = function() {
+  isMuted = !isMuted;
+  const btn = document.getElementById('btn-mute');
+  if (btn) btn.textContent = isMuted ? '🔇' : '🔊';
+  showToast(isMuted ? '🔇 Voice warnings muted' : '🔊 Voice warnings enabled', 'info');
+};
 
-// ── Voice Alert ─────────────────────────────────────────────────────
-
-function speakAlert(
-  text
-) {
-
-  if (
-    'speechSynthesis' in
-    window
-  ) {
-
-    const utterance =
-      new SpeechSynthesisUtterance(
-        text
-      );
-
-
-    utterance.rate =
-      1.0;
-
-
-    utterance.volume =
-      1.0;
-
-
-    window.speechSynthesis.speak(
-      utterance
-    );
-  }
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('toast-fade');
+    setTimeout(() => toast.remove(), 400);
+  }, 3500);
 }
+window.showToast = showToast;
 
-
-// ====================================================================
-// INITIAL LOAD
-// ====================================================================
-
-setupSearch();
-
-loadPatholes();
-
-
-// ── Auto-locate on load ─────────────────────────────────────────────
-
-// This now requests REAL GPS only.
-// There is NO simulated location fallback.
-
-locateUser();
-
-
-// ── Auto-refresh every 30 seconds ──────────────────────────────────
-
-setInterval(
-  refreshMap,
-  30000
-);
+// ── Initialize on DOM ready ─────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initMap();
+  setupSearch();
+});

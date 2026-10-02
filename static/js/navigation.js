@@ -1,49 +1,45 @@
 /**
- * PathPulse AI — Navigation Module (navigation.js)
- * ══════════════════════════════════════════════════
- * Implements Phases 1–8 of the navigation upgrade.
- * Depends on map.js being loaded first (uses window.ppMap,
- * window.routingControl, window.allPatholesData, window.getDirections).
+ * PathPulse AI — 3D Live Navigation Module (navigation.js)
+ * High-performance 3D Turn-by-Turn GPS Navigation Engine
  *
- * GPS hook: map.js calls window.onNavGPSUpdate(lat, lng, pos) on every fix.
+ * Features:
+ * - 3D Camera Perspective Tilt (58° pitch) & dynamic forward road tracking
+ * - 3D Navigation Puck with real-time directional heading
+ * - Dynamic Turn-by-Turn instruction maneuver banner
+ * - Smart Voice Guidance & Speech Synthesis
+ * - Real-Time Pothole Hazard alerts along route
+ * - Course-Up / North-Up Compass mode toggle
  */
 
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 1 — Live Navigation State
-   ═══════════════════════════════════════════════════════════════════════ */
-
 const NAV = {
-  isNavigating:       false,    // Is live navigation mode active?
-  isPaused:           false,    // Is navigation temporarily paused?
-  isFollowing:        true,     // Auto-follow user location on map
-  destLat:            null,     // Current destination latitude
-  destLon:            null,     // Current destination longitude
-  destName:           '',       // Display name of destination
-  currentRoute:       null,     // Array of L.LatLng route coordinates
-  routeSteps:         [],       // Turn-by-turn instruction steps
-  currentStepIndex:   0,        // Which step we've reached
-  spokenInstructions: new Set(),// Step indices already spoken
-  spokenPatholes:     new Set(),// Pathole IDs already warned about
-  lastLat:            null,
-  lastLon:            null,
-  lastTimestamp:      null,
-  currentSpeed:       0,        // km/h
-  recalcCooldown:     false,    // Prevents rapid recalculation loops
-  autoStart:          false,    // Auto-start nav after destination select
-  pendingAutoStart:   false,    // Flag for event-driven auto-start navigation
-  lastValidHeading:   null,
-  lastCameraLat:      null,
-  lastCameraLon:      null,
-  cameraUpdateTime:   0,
-  markerAnimFrame:    null,
-  totalDistance:      0,        // metres (from OSRM route summary)
-  totalTime:          0,        // seconds (from OSRM route summary)
+  isNavigating: false,
+  isPaused: false,
+  isFollowing: true,
+  destLat: null,
+  destLon: null,
+  destName: '',
+  currentRoute: null,     // Array of {lat, lng}
+  routeSteps: [],         // Turn-by-turn steps
+  currentStepIndex: 0,
+  spokenInstructions: new Set(),
+  spokenPatholes: new Set(),
+  lastLat: null,
+  lastLon: null,
+  lastTimestamp: null,
+  currentSpeed: 0,        // km/h
+  totalDistance: 0,       // metres
+  totalTime: 0,           // seconds
+  lastCameraLat: null,
+  lastCameraLon: null,
+  cameraUpdateTime: 0
 };
+window.NAV = NAV;
 
 let isCourseUpMode = true;
 let currentMapBearing = 0;
+const PATHOLE_WARN_DISTANCE_M = 50;
 
-/** Calculate forward bearing angle (0° to 360°) between two coordinates */
+// ── Calculate Bearing Angle ─────────────────────────────────────────
 function calculateBearing(lat1, lon1, lat2, lon2) {
   const toRad = deg => deg * Math.PI / 180;
   const toDeg = rad => rad * 180 / Math.PI;
@@ -56,12 +52,12 @@ function calculateBearing(lat1, lon1, lat2, lon2) {
   return (toDeg(theta) + 360) % 360;
 }
 
-/** Look ahead on current route to calculate the road's forward direction bearing */
 function getForwardRouteBearing(lat, lng) {
   if (!NAV.currentRoute || NAV.currentRoute.length < 2) return 0;
   const { idx } = closestPointOnRoute(lat, lng);
   let targetIdx = idx;
   let accumulatedDist = 0;
+
   for (let i = idx; i < NAV.currentRoute.length - 1; i++) {
     const p1 = NAV.currentRoute[i];
     const p2 = NAV.currentRoute[i + 1];
@@ -69,132 +65,44 @@ function getForwardRouteBearing(lat, lng) {
     targetIdx = i + 1;
     if (accumulatedDist >= 35) break;
   }
-  const pFrom = NAV.currentRoute[idx];
-  const pTo = NAV.currentRoute[targetIdx];
+
+  let pFrom = NAV.currentRoute[idx];
+  let pTo = NAV.currentRoute[targetIdx];
+
   if (!pFrom || !pTo || (pFrom.lat === pTo.lat && pFrom.lng === pTo.lng)) {
-    return 0;
+    if (idx > 0 && NAV.currentRoute[idx - 1]) {
+      pFrom = NAV.currentRoute[idx - 1];
+      pTo = NAV.currentRoute[idx];
+    } else if (NAV.currentRoute.length >= 2) {
+      pFrom = NAV.currentRoute[0];
+      pTo = NAV.currentRoute[1];
+    } else {
+      return 0;
+    }
   }
+
   return calculateBearing(pFrom.lat, pFrom.lng, pTo.lat, pTo.lng);
 }
 
-/** Rotate the Leaflet map container to match the travel direction (Google Maps style) */
+// ── 3D Camera Orientation Control ───────────────────────────────────
 function setMapOrientation(bearing, isAnimated = true) {
-  if (!NAV.isNavigating) return;
+  if (!NAV.isNavigating || !window.ppMap) return;
   const targetBearing = isCourseUpMode ? (bearing || 0) : 0;
   currentMapBearing = targetBearing;
 
-  const mapEl = document.getElementById('main-map');
-  if (mapEl) {
-    mapEl.style.transition = isAnimated ? 'transform 0.45s cubic-bezier(0.25, 1, 0.5, 1)' : 'none';
-    mapEl.style.transform = targetBearing !== 0 ? `rotate(${-targetBearing}deg)` : 'none';
-  }
+  window.ppMap.easeTo({
+    bearing: targetBearing,
+    duration: isAnimated ? 450 : 0
+  });
 
-  // Rotate compass icon needle to show true North
+  // Rotate compass needle
   const compassEl = document.getElementById('live-compass-icon');
   if (compassEl) {
     compassEl.style.transform = `rotate(${targetBearing}deg)`;
   }
-
-  // In Course-Up mode, the user arrow on screen points straight up (0°)
-  const dotEl = document.getElementById('nav-dot-elem-map') || (navMarker && navMarker.getElement ? navMarker.getElement().querySelector('.nav-dot') : null);
-  if (dotEl) {
-    dotEl.style.transform = isCourseUpMode ? 'rotate(0deg)' : `rotate(${bearing || 0}deg)`;
-  }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 2 — Navigation Marker (Google Maps–style blue dot/arrow)
-   ═══════════════════════════════════════════════════════════════════ */
-
-let navMarker = null;
-
-/** Creates or updates the blue navigation marker at [lat, lng] */
-function updateNavMarker(lat, lng, heading) {
-  if (!navMarker) {
-    const icon = L.divIcon({
-      className: 'nav-marker',
-      html: `<div class="nav-dot" id="nav-dot-elem-map">
-               <div class="nav-dot-inner"></div>
-               <div class="nav-dot-halo"></div>
-             </div>`,
-      iconSize:   [32, 32],
-      iconAnchor: [16, 16],
-    });
-    navMarker = L.marker([lat, lng], { icon, zIndexOffset: 1000 }).addTo(window.ppMap);
-  } else {
-    animateNavMarkerTo(lat, lng);
-  }
-
-  if (heading !== null && heading !== undefined && !isNaN(heading) && Number.isFinite(heading) && heading >= 0) {
-    NAV.lastValidHeading = heading;
-    const dotEl = document.getElementById('nav-dot-elem-map') || (navMarker.getElement ? navMarker.getElement().querySelector('.nav-dot') : null);
-    if (dotEl) {
-      dotEl.style.transform = isCourseUpMode ? 'rotate(0deg)' : `rotate(${heading}deg)`;
-    }
-  }
-}
-
-function animateNavMarkerTo(targetLat, targetLng) {
-  if (!navMarker) return;
-  if (NAV.markerAnimFrame) {
-    cancelAnimationFrame(NAV.markerAnimFrame);
-    NAV.markerAnimFrame = null;
-  }
-
-  const curLatLng = navMarker.getLatLng();
-  const startLat = curLatLng.lat;
-  const startLng = curLatLng.lng;
-  const dist = haversineMeters(startLat, startLng, targetLat, targetLng);
-
-  if (dist < 0.2 || dist > 200) {
-    navMarker.setLatLng([targetLat, targetLng]);
-    return;
-  }
-
-  const startTime = performance.now();
-  const duration = Math.min(500, Math.max(200, dist * 20));
-
-  function step(now) {
-    const elapsed = now - startTime;
-    const progress = Math.min(1, elapsed / duration);
-    const ease = 1 - (1 - progress) * (1 - progress);
-
-    const curL = startLat + (targetLat - startLat) * ease;
-    const curG = startLng + (targetLng - startLng) * ease;
-    if (navMarker) {
-      navMarker.setLatLng([curL, curG]);
-    }
-
-    if (progress < 1) {
-      NAV.markerAnimFrame = requestAnimationFrame(step);
-    } else {
-      NAV.markerAnimFrame = null;
-    }
-  }
-
-  NAV.markerAnimFrame = requestAnimationFrame(step);
-}
-
-/** Remove the nav marker when navigation is stopped */
-function removeNavMarker() {
-  if (NAV.markerAnimFrame) {
-    cancelAnimationFrame(NAV.markerAnimFrame);
-    NAV.markerAnimFrame = null;
-  }
-  if (navMarker && window.ppMap) {
-    window.ppMap.removeLayer(navMarker);
-    navMarker = null;
-  }
-  NAV.lastValidHeading = null;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 1 — Start / Stop / Pause / Recenter Navigation Lifecycle
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/**
- * Begin dedicated Page 2 Live Navigation mode toward (destLat, destLon).
- */
+// ── Start 3D Live Navigation ────────────────────────────────────────
 window.startNavigation = function(destLat, destLon, destName) {
   if (!destLat || !destLon) {
     destLat = NAV.destLat;
@@ -206,34 +114,38 @@ window.startNavigation = function(destLat, destLon, destName) {
     return;
   }
 
-  NAV.isNavigating   = true;
-  NAV.isPaused       = false;
-  NAV.isFollowing    = true;
-  NAV.destLat        = destLat;
-  NAV.destLon        = destLon;
-  NAV.destName       = destName || 'Destination';
-  NAV.currentStepIndex   = 0;
+  NAV.isNavigating = true;
+  NAV.isPaused = false;
+  NAV.isFollowing = true;
+  NAV.destLat = destLat;
+  NAV.destLon = destLon;
+  NAV.destName = destName || 'Destination';
+  NAV.currentStepIndex = 0;
   NAV.spokenInstructions = new Set();
-  NAV.spokenPatholes     = new Set();
-  NAV.recalcCooldown     = false;
-  NAV.lastCameraLat      = null;
-  NAV.lastCameraLon      = null;
-  NAV.cameraUpdateTime   = 0;
-  isCourseUpMode         = true;
-  currentMapBearing      = 0;
+  NAV.spokenPatholes = new Set();
+  isCourseUpMode = true;
+  currentMapBearing = 0;
 
-  // Extract route data from existing routingControl
-  _extractRouteData();
+  // Resolve starting location
+  if (!NAV.lastLat || !NAV.lastLon) {
+    if (window.lastKnownGPSPosition) {
+      NAV.lastLat = window.lastKnownGPSPosition.latitude;
+      NAV.lastLon = window.lastKnownGPSPosition.longitude;
+    } else if (NAV.currentRoute && NAV.currentRoute.length > 0) {
+      NAV.lastLat = NAV.currentRoute[0].lat;
+      NAV.lastLon = NAV.currentRoute[0].lng;
+    }
+  }
 
-  // Render detected pothole markers along the route now that live navigation is active
+  // 1. Show detected pothole marks along the route in live navigation mode
   if (typeof window.filterMarkers === 'function') {
     window.filterMarkers();
   }
 
-  // 1. Activate Full-Screen Page 2 Live Navigation layout
+  // 2. Activate Full-Screen Navigation layout
   document.body.classList.add('live-nav-active');
 
-  // 2. Show dedicated Live Navigation UI components
+  // 3. Show dedicated Live Navigation UI components
   const topCard = document.getElementById('live-nav-top-card');
   const speedBadge = document.getElementById('live-nav-speed-badge');
   const floatControls = document.getElementById('live-nav-floating-controls');
@@ -244,71 +156,39 @@ window.startNavigation = function(destLat, destLon, destName) {
   if (floatControls) floatControls.style.display = 'flex';
   if (bottomCard) bottomCard.style.display = 'flex';
 
-  // 3. Reset Pause button UI
-  const pauseBtn = document.getElementById('btn-live-pause');
-  if (pauseBtn) {
-    pauseBtn.classList.remove('is-paused');
-    const pIcon = document.getElementById('live-pause-icon');
-    const pText = document.getElementById('live-pause-text');
-    if (pIcon) pIcon.textContent = '⏸';
-    if (pText) pText.textContent = 'Pause Navigation';
-  }
-
-  // 4. Invalidate Leaflet map size smoothly and orient camera forward along road
-  if (window.ppMap) {
-    requestAnimationFrame(() => {
-      window.ppMap.invalidateSize({ pan: false });
-      if (NAV.lastLat && NAV.lastLon) {
-        NAV.lastCameraLat = NAV.lastLat;
-        NAV.lastCameraLon = NAV.lastLon;
-        NAV.cameraUpdateTime = Date.now();
-        window.ppMap.setView([NAV.lastLat, NAV.lastLon], 18, { animate: false });
-        const initBearing = getForwardRouteBearing(NAV.lastLat, NAV.lastLon);
-        setMapOrientation(initBearing, false);
-        updateNavMarker(NAV.lastLat, NAV.lastLon, initBearing);
-        updateLiveNavUI(NAV.lastLat, NAV.lastLon, null);
-      }
+  // 4. Smooth 3D Camera Swoop into driving perspective
+  if (window.ppMap && NAV.lastLat && NAV.lastLon) {
+    const initBearing = getForwardRouteBearing(NAV.lastLat, NAV.lastLon);
+    window.ppMap.resize();
+    window.ppMap.easeTo({
+      center: [NAV.lastLon, NAV.lastLat],
+      zoom: 18,
+      pitch: 58,
+      bearing: initBearing,
+      duration: 1200
     });
+    updateLiveNavUI(NAV.lastLat, NAV.lastLon);
   }
 
   // 5. Initial voice guidance and toast
-  speakNav('Navigation started. Follow the route.');
-  showToast('🚗 Live Navigation started!', 'success');
-
-  // 6. Immediately populate UI with initial state
-  if (NAV.lastLat && NAV.lastLon) {
-    updateLiveNavUI(NAV.lastLat, NAV.lastLon, null);
-  }
+  speakNav('Navigation started. Follow the highlighted 3D route.');
+  showToast('🚗 3D Live Navigation active!', 'success');
 };
 
-/**
- * Stop live navigation mode and cleanly return to Page 1 (Route Preview).
- */
+// ── Stop Navigation ─────────────────────────────────────────────────
 window.stopNavigation = function() {
   NAV.isNavigating = false;
-  NAV.isPaused     = false;
-  NAV.isFollowing  = true;
+  NAV.isPaused = false;
+  NAV.isFollowing = true;
 
-  removeNavMarker();
-
-  // Hide pothole markers when navigation stops so map preview stays clean
+  // Hide pothole markers when navigation stops (clean preview mode)
   if (typeof window.filterMarkers === 'function') {
     window.filterMarkers();
   }
 
-  // Reset map orientation back to normal North-up
-  const mapEl = document.getElementById('main-map');
-  if (mapEl) {
-    mapEl.style.transform = 'none';
-    mapEl.style.transition = 'none';
-  }
-  isCourseUpMode = true;
-  currentMapBearing = 0;
-
-  // 1. Deactivate Full-Screen Page 2 layout, returning to Page 1 Route Preview
+  // Deactivate navigation layout
   document.body.classList.remove('live-nav-active');
 
-  // 2. Hide Live Navigation components
   const topCard = document.getElementById('live-nav-top-card');
   const speedBadge = document.getElementById('live-nav-speed-badge');
   const floatControls = document.getElementById('live-nav-floating-controls');
@@ -320,118 +200,36 @@ window.stopNavigation = function() {
   if (bottomCard) bottomCard.style.display = 'none';
   hidePatholeWarning();
 
-  // 3. Restore Start Navigation button in Route Info card
   const startBtn = document.getElementById('btn-start-nav');
   if (startBtn) startBtn.style.display = 'inline-flex';
 
-  // 4. Adapt Leaflet map back to normal preview container
+  // Return camera smoothly to 2D flat mode
   if (window.ppMap) {
-    setTimeout(() => {
-      window.ppMap.invalidateSize();
-      if (NAV.currentRoute && NAV.currentRoute.length > 0) {
-        window.ppMap.fitBounds(L.latLngBounds(NAV.currentRoute), { padding: [50, 50], maxZoom: 16 });
-      }
-    }, 100);
+    window.ppMap.resize();
+    window.ppMap.easeTo({
+      pitch: 0,
+      bearing: 0,
+      duration: 800
+    });
+    if (NAV.currentRoute && NAV.currentRoute.length > 0) {
+      const bounds = new maplibregl.LngLatBounds();
+      NAV.currentRoute.forEach(p => bounds.extend([p.lng, p.lat]));
+      window.ppMap.fitBounds(bounds, { padding: 60, maxZoom: 16 });
+    }
   }
 
   speakNav('Navigation ended.');
-  showToast('🏁 Navigation ended. Returned to route preview.', 'info');
+  showToast('🏁 Returned to 2D route preview.', 'info');
 };
 
-/**
- * Toggle Pause / Resume navigation state without clearing route or reloading.
- */
-window.togglePauseNavigation = function() {
-  if (!NAV.isNavigating) return;
-
-  NAV.isPaused = !NAV.isPaused;
-  const pauseBtn = document.getElementById('btn-live-pause');
-  const pIcon = document.getElementById('live-pause-icon');
-  const pText = document.getElementById('live-pause-text');
-
-  if (NAV.isPaused) {
-    if (pauseBtn) pauseBtn.classList.add('is-paused');
-    if (pIcon) pIcon.textContent = '▶';
-    if (pText) pText.textContent = 'Resume Navigation';
-    _speechQueue = [];
-    showToast('⏸ Navigation paused', 'warning');
-  } else {
-    if (pauseBtn) pauseBtn.classList.remove('is-paused');
-    if (pIcon) pIcon.textContent = '⏸';
-    if (pText) pText.textContent = 'Pause Navigation';
-    showToast('▶ Navigation resumed', 'success');
-  }
-};
-
-/**
- * Recenter map camera onto user's current GPS position and resume auto-following.
- */
-window.recenterLiveNav = function() {
-  NAV.isFollowing = true;
-  if (window.ppMap && NAV.lastLat && NAV.lastLon) {
-    NAV.lastCameraLat = NAV.lastLat;
-    NAV.lastCameraLon = NAV.lastLon;
-    NAV.cameraUpdateTime = Date.now();
-    window.ppMap.panTo([NAV.lastLat, NAV.lastLon], { animate: true, duration: 0.5 });
-    if (isCourseUpMode) {
-      const fwdBearing = getForwardRouteBearing(NAV.lastLat, NAV.lastLon);
-      setMapOrientation(fwdBearing, true);
-    }
-    showToast('📍 Following your location', 'info');
-  }
-};
-
-window.resetCompassNorth = function() {
-  isCourseUpMode = !isCourseUpMode;
-  if (isCourseUpMode) {
-    const fwdBearing = getForwardRouteBearing(NAV.lastLat, NAV.lastLon);
-    setMapOrientation(fwdBearing, true);
-    showToast('⬆️ Straight Ahead Mode', 'info');
-  } else {
-    setMapOrientation(0, true);
-    showToast('🧭 North Up Mode (0°)', 'info');
-  }
-};
-
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 1 — GPS Update Hook (called by map.js)
-   ═══════════════════════════════════════════════════════════════════════ */
-
-function updateNavCameraFollow(lat, lng) {
-  if (!NAV.isNavigating || !NAV.isFollowing || NAV.isPaused || !window.ppMap) return;
-
-  const now = Date.now();
-  if (NAV.lastCameraLat === null || NAV.lastCameraLon === null) {
-    NAV.lastCameraLat = lat;
-    NAV.lastCameraLon = lng;
-    NAV.cameraUpdateTime = now;
-    window.ppMap.setView([lat, lng], clamp(window.ppMap.getZoom(), 16, 18), { animate: false });
-    return;
-  }
-
-  const distFromCam = haversineMeters(NAV.lastCameraLat, NAV.lastCameraLon, lat, lng);
-  const timeSinceLastCam = now - NAV.cameraUpdateTime;
-  const center = window.ppMap.getCenter();
-  const distFromCenter = haversineMeters(center.lat, center.lng, lat, lng);
-
-  if (distFromCam > 15 || distFromCenter > 25 || (timeSinceLastCam > 3000 && distFromCam > 8)) {
-    NAV.lastCameraLat = lat;
-    NAV.lastCameraLon = lng;
-    NAV.cameraUpdateTime = now;
-    window.ppMap.panTo([lat, lng], { animate: true, duration: 0.6, easeLinearity: 0.5 });
-  }
-}
-
-/**
- * Receives every GPS update from map.js's watchPosition.
- */
+// ── Real-Time GPS Navigation Updates ────────────────────────────────
 window.onNavGPSUpdate = function(lat, lng, pos) {
   const now = Date.now();
 
-  // Compute speed from coords delta or native speed
+  // Speed calculation
   if (pos && pos.coords && pos.coords.speed !== null && pos.coords.speed >= 0) {
-    NAV.currentSpeed = (pos.coords.speed * 3.6).toFixed(1); // m/s → km/h
-  } else if (NAV.lastLat !== null) {
+    NAV.currentSpeed = (pos.coords.speed * 3.6).toFixed(1);
+  } else if (NAV.lastLat !== null && NAV.lastTimestamp) {
     const dt = (now - NAV.lastTimestamp) / 1000;
     if (dt > 0) {
       const dist = haversineMeters(NAV.lastLat, NAV.lastLon, lat, lng);
@@ -439,15 +237,13 @@ window.onNavGPSUpdate = function(lat, lng, pos) {
     }
   }
 
-  NAV.lastLat       = lat;
-  NAV.lastLon       = lng;
+  NAV.lastLat = lat;
+  NAV.lastLon = lng;
   NAV.lastTimestamp = now;
-
-  const accuracy = (pos && pos.coords && pos.coords.accuracy) ? pos.coords.accuracy.toFixed(0) : '—';
 
   if (!NAV.isNavigating) return;
 
-  // ── Calculate forward direction bearing ─────────────────────────────
+  // Compute forward bearing
   let forwardBearing = 0;
   if (pos && pos.coords && pos.coords.heading !== null && !isNaN(pos.coords.heading) && pos.coords.heading >= 0 && Number(NAV.currentSpeed) > 3) {
     forwardBearing = pos.coords.heading;
@@ -455,462 +251,131 @@ window.onNavGPSUpdate = function(lat, lng, pos) {
     forwardBearing = getForwardRouteBearing(lat, lng);
   }
 
-  // Smoothly adjust Course-Up map rotation
-  if (isCourseUpMode && Math.abs(forwardBearing - currentMapBearing) >= 4) {
-    setMapOrientation(forwardBearing, true);
+  // 3D Camera Follow
+  if (NAV.isFollowing && !NAV.isPaused && window.ppMap) {
+    window.ppMap.easeTo({
+      center: [lng, lat],
+      bearing: isCourseUpMode ? forwardBearing : 0,
+      pitch: 58,
+      duration: 400
+    });
   }
 
-  // ── Smooth navigation marker movement ───────────────────────────────
-  updateNavMarker(lat, lng, forwardBearing);
-
-  // ── Controlled camera following ───────────────────────────────────────
-  updateNavCameraFollow(lat, lng);
-
-  // ── Update Page 2 Live Navigation UI ────────────────────────────────
-  updateLiveNavUI(lat, lng, accuracy);
-
-  // ── Active Navigation Checks (if not paused) ────────────────────────
-  if (!NAV.isPaused) {
-    checkRouteDeviation(lat, lng);
-    checkPatholeProximityNav(lat, lng);
-    checkNextTurnInstruction(lat, lng);
-  }
+  updateLiveNavUI(lat, lng);
+  checkPatholeProximityNav(lat, lng);
+  checkNextTurnInstruction(lat, lng);
 };
 
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 2 — Live Navigation UI Updates
-   ═══════════════════════════════════════════════════════════════════════ */
+// ── Turn-by-Turn Instruction Banner ─────────────────────────────────
+function checkNextTurnInstruction(lat, lng) {
+  if (!NAV.routeSteps || NAV.routeSteps.length === 0) return;
 
-/**
- * Helper to map LRM instruction types to intuitive navigation maneuver icons.
- */
-function getManeuverIcon(type) {
-  const iconMap = {
-    'TurnLeft': '↰',
-    'Left': '↰',
-    'TurnRight': '↱',
-    'Right': '↱',
-    'TurnSlightLeft': '↖',
-    'SlightLeft': '↖',
-    'TurnSlightRight': '↗',
-    'SlightRight': '↗',
-    'TurnSharpLeft': '⬅',
-    'SharpLeft': '⬅',
-    'TurnSharpRight': '➡',
-    'SharpRight': '➡',
-    'UTurn': '↩',
-    'Roundabout': '🔄',
-    'DestinationReached': '🏁',
-    'WaypointReached': '📍',
-    'Head': '↑',
-    'Straight': '↑'
-  };
-  return iconMap[type] || '↑';
-}
+  const step = NAV.routeSteps[NAV.currentStepIndex] || NAV.routeSteps[0];
+  if (!step) return;
 
-/**
- * Extract route coordinates and steps from Leaflet Routing Machine.
- */
-function _extractRouteData() {
-  if (!window.routingControl) return;
-  const waypointLayer = window.routingControl._routes;
-  if (waypointLayer && waypointLayer.length > 0) {
-    const route = (window.allComputedRoutes && typeof window.selectedRouteIndex === 'number' && window.allComputedRoutes[window.selectedRouteIndex]) ? window.allComputedRoutes[window.selectedRouteIndex] : waypointLayer[0];
-    NAV.currentRoute = route.coordinates;
-    NAV.routeSteps   = route.instructions || [];
-    if (route.summary) {
-      NAV.totalDistance = route.summary.totalDistance || 0;
-      NAV.totalTime     = route.summary.totalTime || 0;
-    }
+  const maneuver = step.maneuver || {};
+  const stepRoadEl = document.getElementById('live-nav-step-road');
+  const mainIconEl = document.getElementById('live-nav-main-icon');
+
+  const roadName = step.name ? `on ${step.name}` : (step.ref || 'towards Destination');
+  const instructionText = `${formatManeuverModifier(maneuver.modifier || maneuver.type)} ${roadName}`;
+
+  if (stepRoadEl) stepRoadEl.textContent = instructionText;
+  if (mainIconEl) mainIconEl.innerHTML = `<span class="maneuver-icon">${getManeuverIcon(maneuver.modifier || maneuver.type)}</span>`;
+
+  // Voice announcement
+  if (!NAV.spokenInstructions.has(NAV.currentStepIndex)) {
+    NAV.spokenInstructions.add(NAV.currentStepIndex);
+    speakNav(instructionText);
   }
 }
 
-/**
- * Update all Page 2 Live Navigation elements: Top Card, Speed, Bottom Card.
- */
-function updateLiveNavUI(lat, lng, accuracy) {
-  // 1. Update Speedometer (Real GPS speed or '--')
+function getManeuverIcon(type = '') {
+  const t = type.toLowerCase();
+  if (t.includes('left')) return '↰';
+  if (t.includes('right')) return '↱';
+  if (t.includes('uturn')) return '↶';
+  if (t.includes('roundabout')) return '🔄';
+  if (t.includes('destination') || t.includes('arrive')) return '🏁';
+  return '↑';
+}
+
+function formatManeuverModifier(type = '') {
+  const t = type.toLowerCase();
+  if (t === 'left' || t === 'turn-left') return 'Turn Left';
+  if (t === 'right' || t === 'turn-right') return 'Turn Right';
+  if (t === 'slight left') return 'Keep Left';
+  if (t === 'slight right') return 'Keep Right';
+  if (t === 'sharp left') return 'Sharp Left';
+  if (t === 'sharp right') return 'Sharp Right';
+  if (t === 'roundabout') return 'Enter Roundabout';
+  return 'Continue Straight';
+}
+
+// ── Live Navigation Metrics UI ──────────────────────────────────────
+function updateLiveNavUI(lat, lng) {
+  // Speed
   const speedValEl = document.getElementById('live-nav-speed-val');
   if (speedValEl) {
     const spd = parseFloat(NAV.currentSpeed);
-    const spdText = (!isNaN(spd) && spd > 0) ? String(Math.round(spd)) : '--';
-    if (speedValEl.textContent !== spdText) {
-      speedValEl.textContent = spdText;
-    }
+    speedValEl.textContent = (!isNaN(spd) && spd > 0) ? String(Math.round(spd)) : '--';
   }
 
-  // 2. Compute remaining distance along route from closest point
+  // Remaining distance & ETA
   let remainingMeters = 0;
   if (NAV.currentRoute && NAV.currentRoute.length > 0) {
     const { idx } = closestPointOnRoute(lat, lng);
-    remainingMeters = routeLengthFrom(idx);
+    for (let i = idx; i < NAV.currentRoute.length - 1; i++) {
+      remainingMeters += haversineMeters(
+        NAV.currentRoute[i].lat, NAV.currentRoute[i].lng,
+        NAV.currentRoute[i+1].lat, NAV.currentRoute[i+1].lng
+      );
+    }
   }
 
-  // 3. Format Remaining Distance
   const remainDistStr = remainingMeters >= 1000
     ? (remainingMeters / 1000).toFixed(1) + ' km'
     : Math.round(remainingMeters) + ' m';
 
-  // 4. Format ETA (minutes and hours)
-  let etaMins = 1;
-  if (NAV.totalDistance && NAV.totalTime && NAV.totalDistance > 0) {
-    // Dynamically calculate remaining travel time based on accurate OSRM route speed profile
-    const remainingRatio = Math.max(0, Math.min(1.5, remainingMeters / NAV.totalDistance));
-    const remainingSeconds = remainingRatio * NAV.totalTime;
-    etaMins = Math.max(1, Math.round(remainingSeconds / 60));
-  } else {
-    // Fallback if route summary was unavailable (default 60 km/h highway/urban mix)
-    const currentSpeedNum = parseFloat(NAV.currentSpeed);
-    const speedKmh = (currentSpeedNum > 15) ? currentSpeedNum : 60;
-    etaMins = Math.max(1, Math.round((remainingMeters / 1000) / speedKmh * 60));
-  }
-  const etaStr = etaMins >= 60
-    ? Math.floor(etaMins / 60) + 'h ' + (etaMins % 60) + 'm'
-    : etaMins + ' min';
-
-  // 5. Format Estimated Arrival Clock Time (e.g. "12:48 pm")
-  const arrivalDate = new Date(Date.now() + etaMins * 60 * 1000);
-  let hours = arrivalDate.getHours();
-  const minutes = arrivalDate.getMinutes().toString().padStart(2, '0');
-  const ampm = hours >= 12 ? 'pm' : 'am';
-  hours = hours % 12 || 12;
-  const arrivalTimeStr = `${hours}:${minutes} ${ampm}`;
-
-  // 6. Update Bottom Summary Card (DOM-diffed)
+  let etaMins = Math.max(1, Math.round((remainingMeters / 1000) / 45 * 60));
   const etaLargeEl = document.getElementById('live-nav-eta-large');
   const distRemainEl = document.getElementById('live-nav-dist-remain');
   const arrivalTimeEl = document.getElementById('live-nav-arrival-time');
 
-  if (etaLargeEl && etaLargeEl.textContent !== etaStr) etaLargeEl.textContent = etaStr;
-  if (distRemainEl && distRemainEl.textContent !== remainDistStr) distRemainEl.textContent = remainDistStr;
-  if (arrivalTimeEl && arrivalTimeEl.textContent !== arrivalTimeStr) arrivalTimeEl.textContent = arrivalTimeStr;
+  if (etaLargeEl) etaLargeEl.textContent = `${etaMins} min`;
+  if (distRemainEl) distRemainEl.textContent = remainDistStr;
 
-  // 7. Update Top Maneuver Card (DOM-diffed)
-  const mainIconEl = document.getElementById('live-nav-main-icon');
-  const stepRoadEl = document.getElementById('live-nav-step-road');
-  const nextStepRow = document.getElementById('live-nav-next-step-row');
-  const nextIconEl = document.getElementById('live-nav-next-icon');
-
-  if (NAV.routeSteps && NAV.routeSteps.length > 0) {
-    const currentStep = NAV.routeSteps[NAV.currentStepIndex];
-    if (currentStep) {
-      const mChar = getManeuverIcon(currentStep.type);
-      if (mainIconEl) {
-        const iconSpan = mainIconEl.querySelector('.maneuver-icon');
-        if (!iconSpan || iconSpan.textContent !== mChar) {
-          mainIconEl.innerHTML = `<span class="maneuver-icon">${mChar}</span>`;
-        }
-      }
-
-      if (stepRoadEl) {
-        let roadText = `towards ${NAV.destName || 'Destination'}`;
-        if (currentStep.road && currentStep.road.trim()) {
-          roadText = `towards ${currentStep.road}`;
-        } else if (currentStep.text && currentStep.text.trim()) {
-          const txt = currentStep.text.trim();
-          if (/^(make|turn|keep|head|continue|follow|take|exit|at|in)\b/i.test(txt) || txt.toLowerCase().startsWith('towards')) {
-            roadText = txt;
-          } else {
-            roadText = `towards ${txt}`;
-          }
-        }
-        if (stepRoadEl.textContent !== roadText) {
-          stepRoadEl.textContent = roadText;
-        }
-      }
-
-      // Secondary (Next) maneuver preview
-      if (NAV.currentStepIndex + 1 < NAV.routeSteps.length) {
-        const nextStep = NAV.routeSteps[NAV.currentStepIndex + 1];
-        if (nextStepRow && nextStepRow.style.display !== 'flex') nextStepRow.style.display = 'flex';
-        const nextMChar = getManeuverIcon(nextStep.type);
-        if (nextIconEl && nextIconEl.textContent !== nextMChar) nextIconEl.textContent = nextMChar;
-      } else {
-        if (nextStepRow && nextStepRow.style.display !== 'none') nextStepRow.style.display = 'none';
-      }
-    }
-  } else {
-    // Direct route fallback
-    if (mainIconEl) {
-      const iconSpan = mainIconEl.querySelector('.maneuver-icon');
-      if (!iconSpan || iconSpan.textContent !== '↑') {
-        mainIconEl.innerHTML = `<span class="maneuver-icon">↑</span>`;
-      }
-    }
-    const fallbackText = `towards ${NAV.destName || 'Destination'}`;
-    if (stepRoadEl && stepRoadEl.textContent !== fallbackText) stepRoadEl.textContent = fallbackText;
-    if (nextStepRow && nextStepRow.style.display !== 'none') nextStepRow.style.display = 'none';
+  if (arrivalTimeEl) {
+    const arr = new Date(Date.now() + etaMins * 60000);
+    arrivalTimeEl.textContent = arr.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 }
 
-/**
- * Compass update handler
- */
-function updateCompassHeading(heading) {
-  const compassEl = document.getElementById('live-compass-icon');
-  if (compassEl && heading !== null && heading !== undefined) {
-    compassEl.style.transform = `rotate(${heading}deg)`;
-  }
-}
-
-// Device orientation listener for physical compass needle
-if (window.DeviceOrientationEvent) {
-  window.addEventListener('deviceorientation', function(e) {
-    let heading = null;
-    if (e.webkitCompassHeading) {
-      heading = e.webkitCompassHeading;
-    } else if (e.alpha !== null) {
-      heading = (360 - e.alpha) % 360;
-    }
-    if (heading !== null) {
-      updateCompassHeading(heading);
-    }
-  }, { passive: true });
-}
-
-/**
- * Quick Report Hazard action for ⚠️ Report button
- */
-window.quickReportHazard = function() {
-  let lat = NAV.lastLat;
-  let lon = NAV.lastLon;
-
-  if ((!lat || !lon) && typeof window.ppMap !== 'undefined' && window.ppMap) {
-    const center = window.ppMap.getCenter();
-    lat = center.lat;
-    lon = center.lng;
-  }
-
-  if (!lat || !lon) {
-    showToast('⚠️ Waiting for GPS location to report...', 'warning');
-    return;
-  }
-
-  if (navigator.onLine) {
-    fetch('/api/patholes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        latitude: lat,
-        longitude: lon,
-        severity: 'medium',
-        accel_peak: 20.0,
-        source: 'user_report'
-      })
-    })
-    .then(res => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    })
-    .then(() => {
-      showToast('⚠️ Road hazard reported and saved to database!', 'success');
-      if (typeof window.fetchAndRenderPotholes === 'function') {
-        window.fetchAndRenderPotholes();
-      }
-    })
-    .catch(err => {
-      console.log('Report upload error:', err);
-      showToast('⚠️ Road issue reported locally.', 'info');
-    });
-  }
-};
-
-
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 3 — Route Deviation & Recalculation
-   ═══════════════════════════════════════════════════════════════════════ */
-
-const OFF_ROUTE_THRESHOLD_M = 50; // metres off-route before recalculating
-
-function checkRouteDeviation(lat, lng) {
-  if (!NAV.currentRoute || NAV.currentRoute.length === 0) return;
-  if (NAV.recalcCooldown) return;
-
-  const { dist } = closestPointOnRoute(lat, lng);
-  if (dist > OFF_ROUTE_THRESHOLD_M) {
-    console.log(`[Nav] Off-route by ${dist.toFixed(0)}m — recalculating…`);
-    NAV.recalcCooldown = true;
-
-    speakNav('Recalculating route.');
-    showToast('↩️ Off route — recalculating…', 'warning');
-
-    // Re-use existing getDirections which rebuilds LRM control
-    window.getDirections(NAV.destLat, NAV.destLon);
-
-    // After LRM fires routesfound, re-extract route data
-    const checkInterval = setInterval(() => {
-      const routes = window.routingControl && window.routingControl._routes;
-      if (routes && routes.length > 0) {
-        NAV.currentRoute     = routes[0].coordinates;
-        NAV.routeSteps       = routes[0].instructions || [];
-        if (routes[0].summary) {
-          NAV.totalDistance  = routes[0].summary.totalDistance || 0;
-          NAV.totalTime      = routes[0].summary.totalTime || 0;
-        }
-        NAV.currentStepIndex = 0;
-        NAV.spokenInstructions.clear();
-        clearInterval(checkInterval);
-        // Allow recalc again after 15 seconds
-        setTimeout(() => { NAV.recalcCooldown = false; }, 15000);
-      }
-    }, 500);
-
-    // Safety: clear cooldown after 20s regardless
-    setTimeout(() => { NAV.recalcCooldown = false; }, 20000);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 4 — Voice Navigation (Speech Synthesis API)
-   ═══════════════════════════════════════════════════════════════════════ */
-
-// Queue management to avoid rapid-fire speech
-let _speechQueue = [];
-let _isSpeaking  = false;
-
-/** Speaks a navigation instruction — deduplicates and queues. */
-function speakNav(text) {
-  if (typeof window.speechSynthesis === 'undefined') return;
-  // Don't add duplicate if same text is already queued
-  if (_speechQueue.includes(text)) return;
-  _speechQueue.push(text);
-  _drainSpeechQueue();
-}
-
-function _drainSpeechQueue() {
-  if (_isSpeaking || _speechQueue.length === 0) return;
-  _isSpeaking = true;
-  const text = _speechQueue.shift();
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.rate   = 1.05;
-  utter.volume = 1.0;
-  utter.pitch  = 1.0;
-  utter.onend  = () => { _isSpeaking = false; _drainSpeechQueue(); };
-  utter.onerror = () => { _isSpeaking = false; _drainSpeechQueue(); };
-  window.speechSynthesis.speak(utter);
-}
-
-/**
- * Check if user has passed through a turn step and announce next instruction.
- */
-function checkNextTurnInstruction(lat, lng) {
-  if (NAV.routeSteps.length === 0) return;
-
-  const step = NAV.routeSteps[NAV.currentStepIndex];
-  if (!step) return;
-
-  // Each step has a waypoint index in the route coordinate array
-  const stepCoord = step.waypoint ||
-    (NAV.currentRoute && NAV.currentRoute[step.index]) ||
-    null;
-
-  if (!stepCoord) return;
-
-  const distToStep = haversineMeters(lat, lng, stepCoord.lat, stepCoord.lng);
-
-  // Announce when within 80m of the turn
-  if (distToStep < 80 && !NAV.spokenInstructions.has(NAV.currentStepIndex)) {
-    NAV.spokenInstructions.add(NAV.currentStepIndex);
-    const instruction = buildVoiceInstruction(step);
-    speakNav(instruction);
-    _setDash('dash-next-turn', formatInstruction(step));
-  }
-
-  // Advance to next step when within 20m
-  if (distToStep < 20 && NAV.currentStepIndex < NAV.routeSteps.length - 1) {
-    NAV.currentStepIndex++;
-  }
-
-  // Destination reached check
-  const destDist = haversineMeters(lat, lng, NAV.destLat, NAV.destLon);
-  if (destDist < 30 && !NAV.spokenInstructions.has('destination')) {
-    NAV.spokenInstructions.add('destination');
-    speakNav('You have arrived at your destination.');
-    showToast('🏁 You have arrived!', 'success');
-    _setDash('dash-next-turn', '🏁 Arrived!');
-    document.getElementById('nav-status-badge').className = 'nav-status-badge arrived';
-    document.getElementById('nav-status-text').textContent = 'Arrived';
-  }
-}
-
-/** Converts LRM instruction type to natural voice string. */
-function buildVoiceInstruction(step) {
-  const type = step.type || '';
-  const road = step.road ? ` onto ${step.road}` : '';
-  const dist = step.distance ? ` in ${Math.round(step.distance)} metres` : '';
-
-  const map = {
-    'Head':               `Continue straight${road}${dist}`,
-    'TurnLeft':           `Turn left${road}${dist}`,
-    'TurnRight':          `Turn right${road}${dist}`,
-    'TurnSlightLeft':     `Keep left${road}${dist}`,
-    'TurnSlightRight':    `Keep right${road}${dist}`,
-    'TurnSharpLeft':      `Sharp left turn${road}${dist}`,
-    'TurnSharpRight':     `Sharp right turn${road}${dist}`,
-    'Roundabout':         `Enter the roundabout${dist}`,
-    'WaypointReached':    `Waypoint reached`,
-    'DestinationReached': `You have arrived at your destination`,
-  };
-  return map[type] || step.text || 'Continue straight';
-}
-
-/** Short display string for the dashboard next-turn field. */
-function formatInstruction(step) {
-  const type = step.type || '';
-  const icons = {
-    'TurnLeft':       '⬅️ Turn Left',
-    'TurnRight':      '➡️ Turn Right',
-    'TurnSlightLeft': '↖️ Keep Left',
-    'TurnSlightRight':'↗️ Keep Right',
-    'TurnSharpLeft':  '⬅️ Sharp Left',
-    'TurnSharpRight': '➡️ Sharp Right',
-    'Head':           '⬆️ Continue Straight',
-    'Roundabout':     '🔄 Roundabout',
-    'DestinationReached': '🏁 Destination',
-  };
-  const dist = step.distance ? ` — ${Math.round(step.distance)}m` : '';
-  return (icons[type] || '⬆️ ' + (step.text || 'Continue')) + dist;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 5 — Pathole-Aware Navigation Warnings
-   ═══════════════════════════════════════════════════════════════════════ */
-
-const PATHOLE_WARN_DISTANCE_M = 40; // metres
-
+// ── Pothole Warning System ──────────────────────────────────────────
 function checkPatholeProximityNav(lat, lng) {
   const patholes = window.allPatholesData || [];
   if (patholes.length === 0) return;
 
-  // Find the closest pathole within warning distance
-  let closest     = null;
+  let closest = null;
   let closestDist = Infinity;
 
   patholes.forEach(p => {
-    if (!p.is_active) return;
+    if (p.is_active === false) return;
     const d = haversineMeters(lat, lng, p.latitude, p.longitude);
     if (d <= PATHOLE_WARN_DISTANCE_M && d < closestDist) {
-      closest     = p;
+      closest = p;
       closestDist = d;
     }
   });
 
   if (closest) {
-    // Show floating warning card
     showPatholeWarning(closest, Math.round(closestDist));
-
-    // Speak once per pathole per approach
     if (!NAV.spokenPatholes.has(closest.id)) {
       NAV.spokenPatholes.add(closest.id);
-      speakNav(`Warning. ${closest.severity} severity pathole ahead in ${Math.round(closestDist)} metres.`);
+      speakNav(`Warning. ${closest.severity} severity pothole ahead in ${Math.round(closestDist)} metres.`);
     }
   } else {
     hidePatholeWarning();
-    // Clear patholes that are now far away so we can warn again on next approach
-    patholes.forEach(p => {
-      const d = haversineMeters(lat, lng, p.latitude, p.longitude);
-      if (d > 80) NAV.spokenPatholes.delete(p.id);
-    });
   }
 }
 
@@ -918,13 +383,13 @@ function showPatholeWarning(pathole, distMetres) {
   const card = document.getElementById('pathole-warning-card');
   if (!card) return;
 
-  const sev = pathole.severity.toUpperCase();
+  const sev = (pathole.severity || 'medium').toUpperCase();
   const emoji = pathole.severity === 'high' ? '🔴' : pathole.severity === 'medium' ? '🟡' : '🟢';
   card.innerHTML = `
     <div class="pw-icon">⚠️</div>
     <div class="pw-content">
-      <div class="pw-title">${emoji} ${sev} Pathole Ahead</div>
-      <div class="pw-dist">${distMetres} metres</div>
+      <div class="pw-title">${emoji} ${sev} Pothole Ahead</div>
+      <div class="pw-dist">${distMetres > 0 ? distMetres + ' metres away' : 'Approaching now'}</div>
     </div>
   `;
   card.style.display = 'flex';
@@ -935,7 +400,6 @@ function hidePatholeWarning() {
   const card = document.getElementById('pathole-warning-card');
   if (!card) return;
   card.classList.remove('pw-visible');
-  // Delay hiding so the CSS animation plays out
   setTimeout(() => {
     if (!card.classList.contains('pw-visible')) {
       card.style.display = 'none';
@@ -943,329 +407,57 @@ function hidePatholeWarning() {
   }, 300);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 7 — Enhanced Search: Recent Destinations & Favorites
-   ═══════════════════════════════════════════════════════════════════════ */
-
-const LS_RECENT = 'pp_recent_destinations';
-const LS_FAVS   = 'pp_fav_destinations';
-const LS_AUTO   = 'pp_auto_nav';
-
-/** Returns array of recent destinations from localStorage. */
-function getRecent() {
-  try { return JSON.parse(localStorage.getItem(LS_RECENT)) || []; }
-  catch { return []; }
+// ── Voice Guidance (Web Speech API) ─────────────────────────────────
+function speakNav(text) {
+  if (window.isMuted) return;
+  if (!('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate = 1.05;
+    utt.pitch = 1.0;
+    window.speechSynthesis.speak(utt);
+  } catch (e) {
+    console.warn('Speech error:', e);
+  }
 }
 
-function getFavs() {
-  try { return JSON.parse(localStorage.getItem(LS_FAVS)) || []; }
-  catch { return []; }
-}
-
-/** Save a destination to the recent list (max 5). */
-function saveRecent(dest) {
-  let list = getRecent().filter(d => !(d.lat === dest.lat && d.lon === dest.lon));
-  list.unshift(dest);
-  list = list.slice(0, 5);
-  localStorage.setItem(LS_RECENT, JSON.stringify(list));
-  renderRecentPanel();
-}
-
-function toggleFav(dest) {
-  let favs = getFavs();
-  const idx = favs.findIndex(d => d.lat === dest.lat && d.lon === dest.lon);
-  if (idx >= 0) {
-    favs.splice(idx, 1);
+// ── Floating Action Buttons (Compass & Recenter) ────────────────────
+window.resetCompassNorth = function() {
+  isCourseUpMode = !isCourseUpMode;
+  if (isCourseUpMode) {
+    const fwdBearing = getForwardRouteBearing(NAV.lastLat, NAV.lastLon);
+    setMapOrientation(fwdBearing, true);
+    showToast('⬆️ 3D Course-Up Driving View', 'info');
   } else {
-    favs.unshift(dest);
-    favs = favs.slice(0, 10);
+    setMapOrientation(0, true);
+    showToast('🧭 North-Up (0°)', 'info');
   }
-  localStorage.setItem(LS_FAVS, JSON.stringify(favs));
-  renderRecentPanel();
-  renderFavPanel();
-}
-
-function isFav(lat, lon) {
-  return getFavs().some(d => d.lat === lat && d.lon === lon);
-}
-
-function renderRecentPanel() {
-  const list = getRecent();
-  const panel = document.getElementById('recent-dest-list');
-  if (!panel) return;
-  if (list.length === 0) {
-    panel.innerHTML = '<div class="dest-item-empty">No recent destinations yet</div>';
-    return;
-  }
-  panel.innerHTML = list.map(d => `
-    <div class="dest-item" onclick="selectAndNavigate(${d.lat}, ${d.lon}, '${escapeHtml(d.name)}')">
-      <span class="dest-icon">🕐</span>
-      <span class="dest-name">${escapeHtml(d.name)}</span>
-      <button class="dest-fav-btn ${isFav(d.lat, d.lon) ? 'fav-active' : ''}"
-              onclick="event.stopPropagation(); toggleFavAndRender(${d.lat}, ${d.lon}, '${escapeHtml(d.name)}')"
-              title="Toggle Favourite">★</button>
-    </div>
-  `).join('');
-}
-
-function renderFavPanel() {
-  const list = getFavs();
-  const panel = document.getElementById('fav-dest-list');
-  if (!panel) return;
-  if (list.length === 0) {
-    panel.innerHTML = '<div class="dest-item-empty">No saved favourites yet</div>';
-    return;
-  }
-  panel.innerHTML = list.map(d => `
-    <div class="dest-item" onclick="selectAndNavigate(${d.lat}, ${d.lon}, '${escapeHtml(d.name)}')">
-      <span class="dest-icon">⭐</span>
-      <span class="dest-name">${escapeHtml(d.name)}</span>
-      <button class="dest-fav-btn fav-active"
-              onclick="event.stopPropagation(); toggleFavAndRender(${d.lat}, ${d.lon}, '${escapeHtml(d.name)}')"
-              title="Remove Favourite">★</button>
-    </div>
-  `).join('');
-}
-
-window.toggleFavAndRender = function(lat, lon, name) {
-  toggleFav({ lat, lon, name });
 };
 
-window.toggleRecentPanel = function() {
-  const panel = document.getElementById('recent-dest-panel');
-  if (!panel) return;
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') renderRecentPanel();
-};
-
-window.toggleFavPanel = function() {
-  const panel = document.getElementById('fav-dest-panel');
-  if (!panel) return;
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') renderFavPanel();
-};
-
-/**
- * Select a destination from recent/fav list:
- * calls existing selectDestination(), saves to recent,
- * and optionally auto-starts navigation.
- */
-window.selectAndNavigate = function(lat, lon, name) {
-  // Close panels
-  const rp = document.getElementById('recent-dest-panel');
-  const fp = document.getElementById('fav-dest-panel');
-  if (rp) rp.style.display = 'none';
-  if (fp) fp.style.display = 'none';
-
-  // Update search box
-  const searchInput = document.getElementById('map-search');
-  if (searchInput) searchInput.value = name;
-
-  // Save to recent
-  saveRecent({ lat, lon, name });
-
-  // Store in NAV state
-  NAV.destLat  = lat;
-  NAV.destLon  = lon;
-  NAV.destName = name;
-
-  // Call existing map.js function
-  window.selectDestination(lat, lon, name);
-};
-
-/**
- * Hook into the existing selectDestination function.
- * Wraps it so we can save to recent and handle auto-nav.
- */
-(function patchSelectDestination() {
-  const _original = window.selectDestination;
-  window.selectDestination = function(lat, lon, displayName, autoDirections = true) {
-    // Store destination in NAV state
-    NAV.destLat  = lat;
-    NAV.destLon  = lon;
-    NAV.destName = displayName || 'Destination';
-
-    // Save to recent destinations
-    saveRecent({ lat, lon, name: displayName || 'Destination' });
-
-    // Call original selectDestination
-    _original(lat, lon, displayName, autoDirections);
-
-    // Auto-start navigation if enabled
-    const autoToggle = document.getElementById('auto-nav-toggle');
-    if (autoToggle && autoToggle.checked) {
-      NAV.pendingAutoStart = true;
-    }
-  };
-})();
-
-/* ═══════════════════════════════════════════════════════════════════════
-   PHASE 6 — UX Helpers: Toast Notifications
-   ═══════════════════════════════════════════════════════════════════════ */
-
-let _navLastToastText = '';
-let _navLastToastTime = 0;
-
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-
-  const now = Date.now();
-  // Prevent duplicate spam within 2.5 seconds
-  if (message === _navLastToastText && (now - _navLastToastTime) < 2500) {
-    return;
+window.recenterLiveNav = function() {
+  NAV.isFollowing = true;
+  if (window.ppMap && NAV.lastLat && NAV.lastLon) {
+    const fwdBearing = isCourseUpMode ? getForwardRouteBearing(NAV.lastLat, NAV.lastLon) : 0;
+    window.ppMap.easeTo({
+      center: [NAV.lastLon, NAV.lastLat],
+      zoom: 18,
+      pitch: 58,
+      bearing: fwdBearing,
+      duration: 800
+    });
+    showToast('📍 Centered on your vehicle', 'info');
   }
-  _navLastToastText = message;
-  _navLastToastTime = now;
+};
 
-  // Remove any currently visible toast so they never stack
-  const existingToasts = container.querySelectorAll('.toast, .nav-toast');
-  existingToasts.forEach(t => {
-    t.classList.remove('toast-visible');
-    t.remove();
-  });
-
-  const toast = document.createElement('div');
-  toast.className = `nav-toast nav-toast-${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-
-  // Animate in
-  requestAnimationFrame(() => toast.classList.add('toast-visible'));
-
-  // Remove after 3s
-  setTimeout(() => {
-    toast.classList.remove('toast-visible');
-    setTimeout(() => {
-      toast.remove();
-      if (_navLastToastText === message) {
-        _navLastToastText = '';
-      }
-    }, 300);
-  }, 3000);
-}
-
-window.showToast = showToast;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   ROUTING CONTROL HOOK — Extract route data after LRM routesfound
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/**
- * Patch window.getDirections to capture route data for navigation use.
- * We wait for the routesfound event each time a new route is computed.
- */
-(function patchGetDirections() {
-  const _origGet = window.getDirections;
-  window.getDirections = function(destLat, destLon) {
-    NAV.destLat = destLat;
-    NAV.destLon = destLon;
-
-    _origGet(destLat, destLon);
-
-    // Register event listener immediately to prevent missing routesfound events
-    setTimeout(() => {
-      if (!window.routingControl) return;
-      window.routingControl.on('routesfound', function(e) {
-        const route = e.routes[0];
-        NAV.currentRoute   = route.coordinates;
-        NAV.routeSteps     = route.instructions || [];
-        NAV.currentStepIndex = 0;
-        NAV.spokenInstructions.clear();
-
-        // Show Start Navigation button
-        const startBtn = document.getElementById('btn-start-nav');
-        if (startBtn) startBtn.style.display = 'inline-flex';
-
-        console.log(`[Nav] Route loaded: ${route.coordinates.length} points, ${route.instructions?.length || 0} steps.`);
-
-        // Event-driven auto-start trigger
-        if (NAV.pendingAutoStart) {
-          NAV.pendingAutoStart = false;
-          window.startNavigation(NAV.destLat, NAV.destLon, NAV.destName);
-        }
-      });
-    }, 0);
-  };
-})();
-
-/* ═══════════════════════════════════════════════════════════════════════
-   UTILITY FUNCTIONS
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/** Haversine distance in metres between two lat/lng pairs. */
-function haversineMeters(lat1, lon1, lat2, lon2) {
-  const R    = 6371000;
-  const phi1 = lat1 * Math.PI / 180;
-  const phi2 = lat2 * Math.PI / 180;
-  const dPhi = (lat2 - lat1) * Math.PI / 180;
-  const dLam = (lon2 - lon1) * Math.PI / 180;
-  const a    = Math.sin(dPhi / 2) ** 2 +
-               Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLam / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/** Find closest point index on current route and distance to it (metres). */
+// ── Spatial Closest Point Helper ────────────────────────────────────
 function closestPointOnRoute(lat, lng) {
   if (!NAV.currentRoute || NAV.currentRoute.length === 0) return { idx: 0, dist: Infinity };
   let minDist = Infinity;
-  let minIdx  = 0;
+  let minIdx = 0;
   NAV.currentRoute.forEach((pt, i) => {
     const d = haversineMeters(lat, lng, pt.lat, pt.lng);
     if (d < minDist) { minDist = d; minIdx = i; }
   });
   return { idx: minIdx, dist: minDist };
 }
-
-/** Sum of route segment lengths from index idx to end (metres). */
-function routeLengthFrom(idx) {
-  let total = 0;
-  for (let i = idx; i < NAV.currentRoute.length - 1; i++) {
-    total += haversineMeters(
-      NAV.currentRoute[i].lat,  NAV.currentRoute[i].lng,
-      NAV.currentRoute[i+1].lat, NAV.currentRoute[i+1].lng
-    );
-  }
-  return total;
-}
-
-function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   INITIALISATION — runs once DOM is ready
-   ═══════════════════════════════════════════════════════════════════════ */
-
-(function initNavModule() {
-  // Restore auto-nav preference
-  const autoToggle = document.getElementById('auto-nav-toggle');
-  if (autoToggle) {
-    autoToggle.checked = localStorage.getItem(LS_AUTO) === 'true';
-    autoToggle.addEventListener('change', () => {
-      localStorage.setItem(LS_AUTO, autoToggle.checked);
-    });
-  }
-
-  // Hook map drag to stop auto-centering so user can explore route freely
-  if (window.ppMap) {
-    window.ppMap.on('dragstart', () => {
-      if (NAV.isNavigating) {
-        NAV.isFollowing = false;
-      }
-    });
-  }
-
-  // Render panels on load
-  renderRecentPanel();
-  renderFavPanel();
-
-  console.log('[PathPulse Navigation] Module loaded ✓');
-})();

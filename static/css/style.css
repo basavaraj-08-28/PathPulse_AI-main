@@ -2558,3 +2558,151 @@ body.live-nav-active .pathole-warning-card {
   color: #64748b;
   font-size: 0.78rem;
 }
+
+/* ── MapLibre GL 3D Custom Styles ────────────────────────────────── */
+.maplibregl-canvas-container,
+.maplibregl-canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.maplibregl-popup {
+  max-width: 280px !important;
+  z-index: 1002;
+}
+
+.maplibregl-popup-content {
+  padding: 12px 14px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid rgba(226, 232, 240, 0.8) !important;
+  font-family: inherit !important;
+}
+
+.maplibregl-popup-close-button {
+  padding: 4px 8px !important;
+  font-size: 1.1rem !important;
+  color: #64748b !important;
+  border-radius: 0 12px 0 8px !important;
+}
+
+.maplibregl-popup-close-button:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* 3D Navigation Puck / Arrow Marker */
+.nav-puck-3d {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  pointer-events: none;
+}
+
+.nav-puck-halo {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(37, 99, 235, 0.25);
+  animation: navPuckPulse 2s infinite ease-out;
+}
+
+.nav-puck-core {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow: 0 3px 12px rgba(37, 99, 235, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.nav-puck-arrow {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 9px solid #ffffff;
+  margin-top: -2px;
+}
+
+@keyframes navPuckPulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* 3D Pothole Marker */
+.pothole-marker-3d {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pothole-marker-3d:hover {
+  transform: scale(1.25);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+}
+
+.pothole-marker-3d.severity-low {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.6);
+}
+
+.pothole-marker-3d.severity-medium {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.6);
+}
+
+.pothole-marker-3d.severity-high {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.7);
+  animation: potholeHighPulse 1.8s infinite;
+}
+
+@keyframes potholeHighPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.9);
+  }
+}
+
+/* Destination Pin Marker */
+.dest-marker-3d {
+  font-size: 28px;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+  cursor: pointer;
+  animation: bouncePin 1.2s infinite alternate ease-in-out;
+}
+
+@keyframes bouncePin {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-8px); }
+}
