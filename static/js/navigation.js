@@ -383,17 +383,21 @@ function showPatholeWarning(pathole, distMetres) {
   const card = document.getElementById('pathole-warning-card');
   if (!card) return;
 
-  const sev = (pathole.severity || 'medium').toUpperCase();
-  const emoji = pathole.severity === 'high' ? '🔴' : pathole.severity === 'medium' ? '🟡' : '🟢';
+  const sev = (pathole.severity || 'medium').toLowerCase();
+  const sevUpper = sev.toUpperCase();
+  const emoji = sev === 'high' ? '🔴' : (sev === 'medium' ? '🟡' : '🟢');
+  const icon = sev === 'high' ? '🚨' : (sev === 'medium' ? '⚠️' : 'ℹ️');
+  const titleText = sev === 'high' ? 'CRITICAL HIGH POTHOLE' : (sev === 'medium' ? 'MODERATE POTHOLE' : 'MINOR ROAD BUMP');
+
+  card.className = `pathole-warning-card severity-${sev} pw-visible`;
   card.innerHTML = `
-    <div class="pw-icon">⚠️</div>
+    <div class="pw-icon">${icon}</div>
     <div class="pw-content">
-      <div class="pw-title">${emoji} ${sev} Pothole Ahead</div>
-      <div class="pw-dist">${distMetres > 0 ? distMetres + ' metres away' : 'Approaching now'}</div>
+      <div class="pw-title">${emoji} ${titleText} AHEAD</div>
+      <div class="pw-dist">${distMetres > 0 ? distMetres + ' metres away' : 'Approaching now!'}</div>
     </div>
   `;
   card.style.display = 'flex';
-  card.classList.add('pw-visible');
 }
 
 function hidePatholeWarning() {

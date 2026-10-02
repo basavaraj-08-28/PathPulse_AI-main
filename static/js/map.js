@@ -369,29 +369,40 @@ window.filterMarkers = function() {
   /*
    * USER SPECIFICATION:
    * 1. Browse / preview mode: Keep map clean (potholes hidden).
-   * 2. Live Navigation mode: Render detected pothole markers along the navigation route!
+   * 2. Live Navigation mode: Render distinct HIGH (🔴), MED (🟡), LOW (🟢) 3D pins along route!
    */
   const isNavigating = typeof NAV !== 'undefined' && NAV.isNavigating;
   if (isNavigating && routePotholes.length > 0 && map) {
     routePotholes.forEach(p => {
       const markerEl = document.createElement('div');
-      markerEl.className = `pothole-marker-3d severity-${p.severity}`;
-      markerEl.innerHTML = `<span>🕳️</span>`;
-      markerEl.title = `${p.severity.toUpperCase()} Pothole`;
+      markerEl.className = 'pothole-3d-pin-wrap';
+      const sev = (p.severity || 'medium').toLowerCase();
+      const icon = sev === 'high' ? '⚠️' : (sev === 'medium' ? '⚠️' : 'ℹ️');
+      const tag = sev === 'high' ? 'HIGH' : (sev === 'medium' ? 'MED' : 'LOW');
 
-      const popup = new maplibregl.Popup({ offset: 15 }).setHTML(`
-        <div style="font-weight:700;font-size:0.95rem;margin-bottom:4px;">🕳️ Pothole Detected</div>
-        <div style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:${SEVERITY_COLORS[p.severity] || '#f59e0b'};">
-          ${p.severity} Severity
+      markerEl.innerHTML = `
+        <div class="pothole-3d-pin severity-${sev}" title="${tag} Pothole">
+          <span>${icon}</span>
+          <span>${tag}</span>
+        </div>
+        <div class="pin-pointer"></div>
+      `;
+
+      const popup = new maplibregl.Popup({ offset: [0, -18] }).setHTML(`
+        <div style="font-weight:700;font-size:0.95rem;margin-bottom:4px;">
+          ${sev === 'high' ? '🔴' : (sev === 'medium' ? '🟡' : '🟢')} ${tag} Severity Pothole
+        </div>
+        <div style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:${SEVERITY_COLORS[sev] || '#f59e0b'};">
+          ${sev.toUpperCase()} Threat Level
         </div>
         <div style="font-size:0.78rem;color:#64748b;margin-top:6px;line-height:1.4;">
           📍 ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}<br>
-          📊 Reports: <strong>${p.report_count || 1}</strong> (${Math.round((p.confidence || 0.8) * 100)}% conf)
+          📊 Impact Reports: <strong>${p.report_count || 1}</strong> (${Math.round((p.confidence || 0.8) * 100)}% conf)
           ${p.distToRoute ? `<br>📏 <strong>${p.distToRoute.toFixed(1)}m</strong> from route` : ''}
         </div>
       `);
 
-      const marker = new maplibregl.Marker({ element: markerEl })
+      const marker = new maplibregl.Marker({ element: markerEl, anchor: 'bottom' })
         .setLngLat([p.longitude, p.latitude])
         .setPopup(popup)
         .addTo(map);
@@ -399,7 +410,53 @@ window.filterMarkers = function() {
       activePotholeMarkers.push(marker);
     });
   }
+
+  // Update Road Condition Summary in UI
+  updateRoadConditionUI(routePotholes);
 };
+
+function updateRoadConditionUI(routePotholes = []) {
+  const highCount = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'high').length;
+  const medCount = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'medium').length;
+  const lowCount = routePotholes.filter(p => (p.severity || '').toLowerCase() === 'low').length;
+
+  const bar = document.getElementById('live-road-condition-bar');
+  if (!bar) return;
+
+  if (routePotholes.length === 0) {
+    bar.innerHTML = `
+      <div class="rc-badge good">
+        <span class="rc-dot"></span>
+        <span>🟢 Smooth Road • Clear Route</span>
+      </div>
+    `;
+    return;
+  }
+
+  if (highCount > 0) {
+    bar.innerHTML = `
+      <div class="rc-badge danger">
+        <span class="rc-dot"></span>
+        <span>🔴 Rough Road • ${highCount} High, ${medCount} Med, ${lowCount} Low</span>
+      </div>
+    `;
+  } else if (medCount > 0) {
+    bar.innerHTML = `
+      <div class="rc-badge warning">
+        <span class="rc-dot"></span>
+        <span>🟡 Moderate Road • ${medCount} Med, ${lowCount} Low</span>
+      </div>
+    `;
+  } else {
+    bar.innerHTML = `
+      <div class="rc-badge good">
+        <span class="rc-dot"></span>
+        <span>🟢 Good Road • ${lowCount} Minor Bump${lowCount > 1 ? 's' : ''}</span>
+      </div>
+    `;
+  }
+}
+window.updateRoadConditionUI = updateRoadConditionUI;
 
 function filterPotholesAlongRoute(routeCoords, thresholdMeters) {
   if (!routeCoords || routeCoords.length === 0) return [];
