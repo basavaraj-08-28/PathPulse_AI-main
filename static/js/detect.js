@@ -1433,6 +1433,9 @@ window.startNavigation = function(destLat, destLon, destName) {
     // 6. Initial voice guidance and toast
     speakNav('Navigation started. Follow the route.');
     showToast('🚗 Live Navigation started! Pothole detection active.', 'success');
+
+    // 7. Render detected pothole markers along the navigation route
+    updateNavigationPotholeMarkers();
 };
 
 window.stopNavigation = function() {
@@ -1441,6 +1444,9 @@ window.stopNavigation = function() {
     NAV.isFollowing = true;
 
     removeNavMarker();
+
+    // Clear pothole markers when navigation stops
+    updateNavigationPotholeMarkers();
 
         // 1. Deactivate Full-Screen Page 2 layout, returning to Page 1 Route Preview
     document.body.classList.remove('live-nav-active');
@@ -1901,6 +1907,40 @@ function hidePatholeWarning() {
             card.style.display = 'none';
         }
     }, 300);
+}
+
+function createDetectPatholeMarker(pathole) {
+    const color = SEVERITY_COLORS[pathole.severity] || SEVERITY_COLORS.medium;
+    const radius = pathole.severity === 'high' ? 13 : (pathole.severity === 'medium' ? 10 : 8);
+    const marker = L.circleMarker([pathole.latitude, pathole.longitude], {
+        radius: radius,
+        fillColor: color,
+        fillOpacity: 0.85,
+        color: '#ffffff',
+        weight: 2.5,
+        opacity: 0.95
+    });
+    marker.bindPopup(`
+        <div style="font-weight:700;font-size:0.9rem;margin-bottom:4px;">🕳️ Pathole Detected</div>
+        <div style="text-transform:uppercase;font-weight:600;font-size:0.8rem;color:${color}">${pathole.severity}</div>
+        <div style="font-size:0.78rem;color:#64748b;margin-top:4px;">
+            Coords: ${pathole.latitude.toFixed(5)}, ${pathole.longitude.toFixed(5)}<br>
+            Reports: ${pathole.report_count || 1}
+        </div>
+    `);
+    return marker;
+}
+
+function updateNavigationPotholeMarkers() {
+    if (typeof patholeLayer === 'undefined' || !patholeLayer) return;
+    patholeLayer.clearLayers();
+    if (NAV.isNavigating && NAV.currentRoute && NAV.currentRoute.length > 0) {
+        const routePotholes = filterPotholesAlongRoute(NAV.currentRoute, ROUTE_PROXIMITY_THRESHOLD_METERS);
+        routePotholes.forEach(p => {
+            const m = createDetectPatholeMarker(p);
+            m.addTo(patholeLayer);
+        });
+    }
 }
 
 function filterPotholesAlongRoute(routeCoords, thresholdMeters) {

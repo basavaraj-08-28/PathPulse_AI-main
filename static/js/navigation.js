@@ -225,6 +225,11 @@ window.startNavigation = function(destLat, destLon, destName) {
   // Extract route data from existing routingControl
   _extractRouteData();
 
+  // Render detected pothole markers along the route now that live navigation is active
+  if (typeof window.filterMarkers === 'function') {
+    window.filterMarkers();
+  }
+
   // 1. Activate Full-Screen Page 2 Live Navigation layout
   document.body.classList.add('live-nav-active');
 
@@ -285,6 +290,11 @@ window.stopNavigation = function() {
   NAV.isFollowing  = true;
 
   removeNavMarker();
+
+  // Hide pothole markers when navigation stops so map preview stays clean
+  if (typeof window.filterMarkers === 'function') {
+    window.filterMarkers();
+  }
 
   // Reset map orientation back to normal North-up
   const mapEl = document.getElementById('main-map');

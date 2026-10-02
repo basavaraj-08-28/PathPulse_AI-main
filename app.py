@@ -406,7 +406,7 @@ def report_pathole():
 
     if not data or 'latitude' not in data or 'longitude' not in data:
         return jsonify({'status': 'error', 'message': 'latitude and longitude are required'}), 400
-
+  
     try:
         lat = float(data['latitude'])
         lng = float(data['longitude'])

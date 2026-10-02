@@ -695,6 +695,7 @@ window.locateUser =
 let patholeLayer =
   L.layerGroup().addTo(map);
 
+window.patholeLayer = patholeLayer;
 
 // ── Create Pathole Marker ───────────────────────────────────────────
 
@@ -2185,19 +2186,17 @@ function filterPotholesAlongRoute(
 window.filterMarkers =
   function() {
 
-    patholeLayer.clearLayers();
+    if (patholeLayer) {
+      patholeLayer.clearLayers();
+    }
 
-    /*
-     * IMPORTANT REQUIREMENT:
-     * Main Map page — HIDE pothole markers completely.
-     * Do NOT display pothole markers, pins, circles, or icons.
-     * Keep pathole data in memory (window.allPatholesData) for route warnings,
-     * statistics, and internal calculations, but keep map clean.
-     */
+    const activeRouteCoords =
+      currentRouteCoordinates ||
+      (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
 
     if (
-      !currentRouteCoordinates ||
-      currentRouteCoordinates.length === 0
+      !activeRouteCoords ||
+      activeRouteCoords.length === 0
     ) {
 
       const countEl =
@@ -2216,12 +2215,9 @@ window.filterMarkers =
 
     const routePotholes =
       filterPotholesAlongRoute(
-        currentRouteCoordinates,
+        activeRouteCoords,
         window.ROUTE_PROXIMITY_THRESHOLD_METERS
       );
-
-    // Keep map clean: Do NOT add markers to patholeLayer
-    // patholeLayer remains cleared.
 
     const countEl =
       document.getElementById(
@@ -2232,6 +2228,21 @@ window.filterMarkers =
 
       countEl.textContent =
         routePotholes.length;
+    }
+
+    /*
+     * Main Map page:
+     * - Do NOT display pothole markers during normal browse / preview mode (keeps the map clean).
+     * - DO display the detected pothole marks along the route as soon as the user starts navigating (NAV.isNavigating === true).
+     */
+    const isNavigating = typeof NAV !== 'undefined' && NAV.isNavigating;
+    if (isNavigating && routePotholes.length > 0) {
+      routePotholes.forEach(p => {
+        const marker = createPatholeMarker(p);
+        if (marker && patholeLayer) {
+          marker.addTo(patholeLayer);
+        }
+      });
     }
   };
 
