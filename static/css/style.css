@@ -2789,62 +2789,229 @@ body.live-nav-active .pathole-warning-card {
   box-shadow: 0 0 8px #10b981;
 }
 
-/* ── Modern Circular Dot Pothole Markers (Image Style) ── */
-.pothole-dot-marker {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid #ffffff;
-  cursor: pointer;
-  box-sizing: border-box;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
-  transform-origin: center center;
+/* ── Circular Pothole Markers on Navigation & Live Map ─────────────────── */
+.pothole-circle-marker-wrap {
   position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 60;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  user-select: none;
 }
 
-.pothole-dot-marker:hover {
+.pothole-circle-marker-wrap:hover {
   transform: scale(1.4);
-  z-index: 999;
+  z-index: 1000;
 }
 
-.pothole-dot-marker.severity-high {
-  width: 20px;
-  height: 20px;
-  background-color: #ef4444;
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.65), 0 2px 6px rgba(0, 0, 0, 0.35);
-  animation: dotPulseHigh 2s infinite ease-in-out;
+.pothole-circle-pulse {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  pointer-events: none;
 }
 
-.pothole-dot-marker.severity-medium {
-  width: 15px;
-  height: 15px;
-  background-color: #f59e0b;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.55), 0 2px 5px rgba(0, 0, 0, 0.3);
+.pothole-circle-core {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+  position: relative;
+  z-index: 2;
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1;
 }
 
-.pothole-dot-marker.severity-low {
-  width: 11px;
-  height: 11px;
-  background-color: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5), 0 2px 4px rgba(0, 0, 0, 0.25);
+/* HIGH SEVERITY: RED CIRCLE */
+.pothole-circle-marker-wrap.severity-high .pothole-circle-core {
+  background: radial-gradient(circle at 35% 35%, #ff4d4f, #dc2626);
+  border-color: #ffffff;
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.95), 0 3px 8px rgba(0, 0, 0, 0.45);
 }
 
-@keyframes dotPulseHigh {
+.pothole-circle-marker-wrap.severity-high .pothole-circle-pulse {
+  background: rgba(239, 68, 68, 0.4);
+  animation: potholePulseRed 1.6s infinite ease-out;
+}
+
+@keyframes potholePulseRed {
   0% {
-    transform: scale(1);
-    box-shadow: 0 0 6px rgba(239, 68, 68, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+    transform: scale(0.6);
+    opacity: 0.95;
   }
-  50% {
-    transform: scale(1.15);
-    box-shadow: 0 0 14px rgba(239, 68, 68, 0.85), 0 3px 8px rgba(0, 0, 0, 0.4);
+  65% {
+    transform: scale(1.9);
+    opacity: 0.2;
   }
   100% {
-    transform: scale(1);
-    box-shadow: 0 0 6px rgba(239, 68, 68, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+    transform: scale(2.4);
+    opacity: 0;
   }
 }
 
-/* ── Live Navigation Warning Card (Yellow Box matching screenshot) ── */
+/* MEDIUM SEVERITY: ORANGE CIRCLE */
+.pothole-circle-marker-wrap.severity-medium .pothole-circle-core {
+  background: radial-gradient(circle at 35% 35%, #fbbf24, #d97706);
+  border-color: #ffffff;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.85), 0 3px 8px rgba(0, 0, 0, 0.35);
+}
+
+.pothole-circle-marker-wrap.severity-medium .pothole-circle-pulse {
+  background: rgba(245, 158, 11, 0.35);
+  animation: potholePulseOrange 2.0s infinite ease-out;
+}
+
+@keyframes potholePulseOrange {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.85;
+  }
+  65% {
+    transform: scale(1.7);
+    opacity: 0.2;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+/* LOW SEVERITY: GREEN CIRCLE */
+.pothole-circle-marker-wrap.severity-low {
+  width: 24px;
+  height: 24px;
+}
+
+.pothole-circle-marker-wrap.severity-low .pothole-circle-core {
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle at 35% 35%, #34d399, #059669);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.7), 0 2px 5px rgba(0, 0, 0, 0.3);
+  font-size: 9px;
+}
+
+.pothole-circle-marker-wrap.severity-low .pothole-circle-pulse {
+  background: rgba(16, 185, 129, 0.3);
+  animation: potholePulseGreen 2.5s infinite ease-out;
+}
+
+@keyframes potholePulseGreen {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+/* ── Pothole Map Popup Styling ─────────────────────────────────────── */
+.pothole-map-popup {
+  padding: 6px 4px 4px;
+  font-family: inherit;
+  color: #0f172a;
+}
+
+.pmp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.pmp-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.4px;
+}
+
+.pmp-id {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.pmp-warning-banner {
+  background: #fef2f2;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  color: #991b1b;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.3;
+}
+
+.pmp-warning-banner.med {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.pmp-warning-banner.low {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.pmp-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  margin-bottom: 10px;
+  background: #f8fafc;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.pmp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pmp-lbl {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.pmp-val {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.pmp-actions {
+  display: flex;
+  justify-content: stretch;
+}
+
+.pmp-actions .btn {
+  width: 100%;
+  justify-content: center;
+  font-size: 0.78rem;
+  padding: 5px 10px;
+}
+
+/* ── Live Navigation Warning Card (Yellow / Red Banner matching UX) ── */
 .pathole-warning-card {
   position: absolute;
   top: calc(90px + env(safe-area-inset-top, 0px));
@@ -2868,6 +3035,22 @@ body.live-nav-active .pathole-warning-card {
 .pathole-warning-card.pw-visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+.pathole-warning-card.severity-high {
+  background: #fef2f2 !important;
+  border: 2px solid #f87171 !important;
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.3), 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.pathole-warning-card.severity-high .pw-title {
+  color: #991b1b;
+}
+
+.pathole-warning-card.severity-high .pw-subtitle,
+.pathole-warning-card.severity-high .pw-action {
+  color: #b91c1c;
+  font-weight: 800;
 }
 
 .pathole-warning-card .pw-icon {
@@ -2896,7 +3079,8 @@ body.live-nav-active .pathole-warning-card {
   letter-spacing: -0.01em;
 }
 
-.pathole-warning-card .pw-subtitle {
+.pathole-warning-card .pw-subtitle,
+.pathole-warning-card .pw-action {
   font-weight: 800;
   font-size: 0.92rem;
   color: #713f12;
@@ -2910,13 +3094,6 @@ body.live-nav-active .pathole-warning-card {
   font-weight: 600;
   margin-top: 3px;
   letter-spacing: 0.5px;
-}
-
-.pathole-warning-card.severity-high,
-.pathole-warning-card.severity-medium,
-.pathole-warning-card.severity-low {
-  background: #fffbeb !important;
-  border: 2px solid #fde047 !important;
 }
 
 /* ── Destination Marker 3D / Premium Pin ─────────────────────────── */

@@ -345,11 +345,15 @@ window.refreshMap = function() {
   showToast('🔄 Map and pothole data refreshed', 'info');
 };
 
-// ── Pothole Markers Rendering (Clean Preview vs Active Nav) ─────────
+// ── Pothole Markers Rendering (High = Red Circle, Medium = Orange Circle, Low = Green Circle) ──
 window.filterMarkers = function() {
   // Clear any existing DOM pothole markers
   activePotholeMarkers.forEach(m => m.remove());
   activePotholeMarkers = [];
+
+  const showLow = document.getElementById('filter-low')?.checked ?? true;
+  const showMed = document.getElementById('filter-medium')?.checked ?? true;
+  const showHigh = document.getElementById('filter-high')?.checked ?? true;
 
   const activeRouteCoords = currentRouteCoordinates || (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
 
@@ -366,7 +370,96 @@ window.filterMarkers = function() {
     countEl.textContent = routePotholes.length;
   }
 
-  // Remove all pothole markers from the map per user specification (clean map view)
+  updateRoadConditionUI(routePotholes);
+
+  if (!map || !allPatholesData || allPatholesData.length === 0) return;
+
+  allPatholesData.forEach(p => {
+    if (p.is_active === false) return;
+    const sev = (p.severity || 'medium').toLowerCase();
+    if (sev === 'low' && !showLow) return;
+    if (sev === 'medium' && !showMed) return;
+    if (sev === 'high' && !showHigh) return;
+
+    // Create custom DOM circle marker element
+    const el = document.createElement('div');
+    el.className = `pothole-circle-marker-wrap severity-${sev}`;
+    el.setAttribute('data-id', p.id);
+    el.setAttribute('data-severity', sev);
+    el.setAttribute('title', `${sev.toUpperCase()} Severity Pothole #${p.id} — Slow down vehicle`);
+
+    const iconSymbol = sev === 'high' ? '⚠️' : (sev === 'medium' ? '⚠️' : '•');
+    el.innerHTML = `
+      <div class="pothole-circle-pulse"></div>
+      <div class="pothole-circle-core">
+        <span class="pothole-circle-icon">${iconSymbol}</span>
+      </div>
+    `;
+
+    // Severity specific popup presentation
+    const sevUpper = sev.toUpperCase();
+    const badgeColor = sev === 'high' ? '#ef4444' : (sev === 'medium' ? '#f59e0b' : '#10b981');
+    const badgeBg = sev === 'high' ? '#fee2e2' : (sev === 'medium' ? '#fef3c7' : '#d1fae5');
+    const slowDownMsg = sev === 'high'
+      ? '🛑 <strong>SLOW DOWN VEHICLE!</strong> Major hazard detected.'
+      : (sev === 'medium'
+        ? '⚠️ <strong>Reduce speed!</strong> Medium bump detected.'
+        : '🟢 <strong>Minor bump</strong> detected on road.');
+    const bannerClass = sev === 'high' ? '' : (sev === 'medium' ? 'med' : 'low');
+
+    const popupHtml = `
+      <div class="pothole-map-popup">
+        <div class="pmp-header">
+          <span class="pmp-badge" style="background:${badgeBg}; color:${badgeColor}; border:1px solid ${badgeColor};">
+            ${sev === 'high' ? '🔴' : (sev === 'medium' ? '🟠' : '🟢')} ${sevUpper} POTHOLE
+          </span>
+          <span class="pmp-id">#${p.id}</span>
+        </div>
+        <div class="pmp-warning-banner ${bannerClass}">
+          <span>${slowDownMsg}</span>
+        </div>
+        <div class="pmp-details">
+          <div class="pmp-row">
+            <span class="pmp-lbl">📍 Coordinates:</span>
+            <span class="pmp-val">${Number(p.latitude).toFixed(5)}, ${Number(p.longitude).toFixed(5)}</span>
+          </div>
+          ${p.confidence ? `
+          <div class="pmp-row">
+            <span class="pmp-lbl">🎯 Confidence:</span>
+            <span class="pmp-val">${Math.round(p.confidence * 100)}%</span>
+          </div>` : ''}
+          ${p.accel_peak ? `
+          <div class="pmp-row">
+            <span class="pmp-lbl">💥 Peak Impact:</span>
+            <span class="pmp-val">${Number(p.accel_peak).toFixed(1)} m/s²</span>
+          </div>` : ''}
+          ${p.created_at ? `
+          <div class="pmp-row">
+            <span class="pmp-lbl">🕒 Detected:</span>
+            <span class="pmp-val">${new Date(p.created_at).toLocaleDateString()}</span>
+          </div>` : ''}
+        </div>
+        <div class="pmp-actions">
+          <button class="btn btn-sm btn-primary" onclick="setDestinationFromCoords(${p.latitude}, ${p.longitude}, '${sevUpper} Pothole #${p.id}')">
+            🚗 Navigate Here
+          </button>
+        </div>
+      </div>
+    `;
+
+    const popup = new maplibregl.Popup({ offset: 16, maxWidth: '280px', closeButton: true })
+      .setHTML(popupHtml);
+
+    const marker = new maplibregl.Marker({
+      element: el,
+      anchor: 'center'
+    })
+      .setLngLat([p.longitude, p.latitude])
+      .setPopup(popup)
+      .addTo(map);
+
+    activePotholeMarkers.push(marker);
+  });
 };
 
 function updateRoadConditionUI(routePotholes = []) {

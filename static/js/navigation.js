@@ -37,7 +37,7 @@ window.NAV = NAV;
 
 let isCourseUpMode = true;
 let currentMapBearing = 0;
-const PATHOLE_WARN_DISTANCE_M = 50;
+const PATHOLE_WARN_DISTANCE_M = 65;
 
 // ── Calculate Bearing Angle ─────────────────────────────────────────
 function calculateBearing(lat1, lon1, lat2, lon2) {
@@ -351,7 +351,7 @@ function updateLiveNavUI(lat, lng) {
   }
 }
 
-// ── Pothole Warning System ──────────────────────────────────────────
+// ── Pothole Warning System (Slow Down Alert) ────────────────────────
 function checkPatholeProximityNav(lat, lng) {
   const patholes = window.allPatholesData || [];
   if (patholes.length === 0) return;
@@ -372,7 +372,14 @@ function checkPatholeProximityNav(lat, lng) {
     showPatholeWarning(closest, Math.round(closestDist));
     if (!NAV.spokenPatholes.has(closest.id)) {
       NAV.spokenPatholes.add(closest.id);
-      speakNav(`Warning. ${closest.severity} severity pothole ahead in ${Math.round(closestDist)} metres.`);
+      const sev = (closest.severity || 'medium').toLowerCase();
+      if (sev === 'high') {
+        speakNav(`Warning! High severity pothole ahead in ${Math.round(closestDist)} metres. Please slow down your vehicle.`);
+      } else if (sev === 'medium') {
+        speakNav(`Caution! Medium pothole ahead in ${Math.round(closestDist)} metres. Please reduce speed.`);
+      } else {
+        speakNav(`Minor road bump ahead in ${Math.round(closestDist)} metres.`);
+      }
     }
   } else {
     hidePatholeWarning();
@@ -384,16 +391,19 @@ function showPatholeWarning(pathole, distMetres) {
   if (!card) return;
 
   const sev = (pathole.severity || 'medium').toLowerCase();
-  const sevUpper = sev === 'high' ? 'HIGH' : (sev === 'medium' ? 'MED' : 'LOW');
+  const sevUpper = sev === 'high' ? 'HIGH SEVERITY' : (sev === 'medium' ? 'MEDIUM SEVERITY' : 'LOW SEVERITY');
   const emoji = sev === 'high' ? '🔴' : (sev === 'medium' ? '🟠' : '🟢');
+  const actionPrompt = sev === 'high'
+    ? '🛑 SLOW DOWN VEHICLE!'
+    : (sev === 'medium' ? '⚠️ REDUCE SPEED' : '🟢 Caution');
 
   card.className = `pathole-warning-card severity-${sev} pw-visible`;
   card.innerHTML = `
-    <div class="pw-icon">⚠️</div>
+    <div class="pw-icon">${sev === 'high' ? '🛑' : '⚠️'}</div>
     <div class="pw-content">
-      <div class="pw-title"><span class="pw-dot-icon">${emoji}</span> ${sevUpper} Pathole</div>
-      <div class="pw-subtitle">Ahead</div>
-      <div class="pw-dist">${distMetres > 0 ? distMetres + ' metres' : 'Approaching now!'}</div>
+      <div class="pw-title"><span class="pw-dot-icon">${emoji}</span> ${sevUpper} POTHOLE</div>
+      <div class="pw-action">${actionPrompt}</div>
+      <div class="pw-dist">${distMetres > 0 ? distMetres + ' metres ahead' : 'Approaching now!'}</div>
     </div>
   `;
   card.style.display = 'flex';
