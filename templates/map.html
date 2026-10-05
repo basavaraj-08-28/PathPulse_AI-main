@@ -251,6 +251,22 @@
       border-color: #bfdbfe;
     }
 
+    /* Refresh pill */
+    #btn-refresh-map {
+      color: #334155;
+    }
+
+    #btn-refresh-map:hover {
+      background: #f1f5f9;
+      color: #059669;
+      border-color: #cbd5e1;
+    }
+
+    #btn-refresh-map:active .pill-icon {
+      transform: rotate(180deg);
+      transition: transform 0.3s ease;
+    }
+
     /* ── Map container fills remaining available viewport ────── */
     .map-container {
       flex: 1;
@@ -419,37 +435,15 @@
 
       <!-- Row 2: Filter and Action Pills -->
       <div class="filter-pills-row">
-        <!-- All Pill -->
-        <button class="filter-pill active" id="filter-pill-all" onclick="setFilterSeverity('all')" title="Show All Potholes">
-          <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-            <polyline points="22 4 12 14.01 9 11.01" />
+        <!-- 1. My Location Pill (First) -->
+        <button class="filter-pill" id="btn-locate" onclick="locateUser()" title="Center on My Location">
+          <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="#2563eb">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>
           </svg>
-          <span>All</span>
+          <span>My Location</span>
         </button>
 
-        <!-- Low Pill -->
-        <button class="filter-pill active" id="filter-pill-low" onclick="setFilterSeverity('low')" title="Toggle Low Severity">
-          <input type="checkbox" id="filter-low" checked style="display:none;" onchange="filterMarkers()">
-          <span class="pill-dot pill-dot-low"></span>
-          <span>Low</span>
-        </button>
-
-        <!-- Medium Pill -->
-        <button class="filter-pill active" id="filter-pill-medium" onclick="setFilterSeverity('medium')" title="Toggle Medium Severity">
-          <input type="checkbox" id="filter-medium" checked style="display:none;" onchange="filterMarkers()">
-          <span class="pill-dot pill-dot-medium"></span>
-          <span>Medium</span>
-        </button>
-
-        <!-- High Pill -->
-        <button class="filter-pill active" id="filter-pill-high" onclick="setFilterSeverity('high')" title="Toggle High Severity">
-          <input type="checkbox" id="filter-high" checked style="display:none;" onchange="filterMarkers()">
-          <span class="pill-dot pill-dot-high"></span>
-          <span>High</span>
-        </button>
-
-        <!-- 3D Pill -->
+        <!-- 2. 3D Pill (Second) -->
         <button class="filter-pill" id="btn-toggle-3d" onclick="toggle3DView()" title="Toggle 3D Buildings & Tilt">
           <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
@@ -459,12 +453,42 @@
           <span id="btn-3d-text">3D</span>
         </button>
 
-        <!-- My Location Pill -->
-        <button class="filter-pill" id="btn-locate" onclick="locateUser()" title="Center on My Location">
-          <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="#2563eb">
-            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>
+        <!-- 3. Refresh Pill (Third) -->
+        <button class="filter-pill" id="btn-refresh-map" onclick="refreshMap()" title="Refresh Map & Pothole Data">
+          <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
           </svg>
-          <span>My Location</span>
+          <span>Refresh</span>
+        </button>
+
+        <!-- 4. All Pill -->
+        <button class="filter-pill active" id="filter-pill-all" onclick="setFilterSeverity('all')" title="Show All Potholes">
+          <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <span>All</span>
+        </button>
+
+        <!-- 5. Low Pill -->
+        <button class="filter-pill active" id="filter-pill-low" onclick="setFilterSeverity('low')" title="Toggle Low Severity">
+          <input type="checkbox" id="filter-low" checked style="display:none;" onchange="filterMarkers()">
+          <span class="pill-dot pill-dot-low"></span>
+          <span>Low</span>
+        </button>
+
+        <!-- 6. Medium Pill -->
+        <button class="filter-pill active" id="filter-pill-medium" onclick="setFilterSeverity('medium')" title="Toggle Medium Severity">
+          <input type="checkbox" id="filter-medium" checked style="display:none;" onchange="filterMarkers()">
+          <span class="pill-dot pill-dot-medium"></span>
+          <span>Medium</span>
+        </button>
+
+        <!-- 7. High Pill -->
+        <button class="filter-pill active" id="filter-pill-high" onclick="setFilterSeverity('high')" title="Toggle High Severity">
+          <input type="checkbox" id="filter-high" checked style="display:none;" onchange="filterMarkers()">
+          <span class="pill-dot pill-dot-high"></span>
+          <span>High</span>
         </button>
 
         <!-- Secondary / Helper controls maintained in DOM for compatibility -->
@@ -473,7 +497,6 @@
           <button id="btn-favs" onclick="toggleFavPanel()"></button>
           <input type="checkbox" id="auto-nav-toggle">
           <button id="btn-mute" onclick="toggleMute()"></button>
-          <button id="btn-refresh-map" onclick="refreshMap()"></button>
         </div>
       </div>
     </div>
