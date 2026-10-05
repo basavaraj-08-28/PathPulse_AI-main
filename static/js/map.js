@@ -359,7 +359,6 @@ function create2DPotholeMarker(pothole) {
   el.setAttribute('title', `${sevTitle} Pothole`);
 
   el.innerHTML = `
-    <div class="pothole-dot-pulse sev-${sev}"></div>
     <div class="pothole-dot-core sev-${sev}"></div>
   `;
 
