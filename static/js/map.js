@@ -345,28 +345,116 @@ window.refreshMap = function() {
   showToast('🔄 Map and pothole data refreshed', 'info');
 };
 
-// ── Pothole Markers Rendering (Clean Preview vs Active Nav) ─────────
+// ── 2D Flat Pothole Circular Dots (Leaflet Style Clean Road Dots) ────────
+function create2DPotholeMarker(pothole) {
+  if (!map || pothole.latitude == null || pothole.longitude == null) return null;
+
+  const sev = (pothole.severity || 'medium').toLowerCase();
+  const sevTitle = sev === 'high' ? 'High Severity' : (sev === 'medium' ? 'Medium Severity' : 'Low Severity');
+  const sevEmoji = sev === 'high' ? '🔴' : (sev === 'medium' ? '🟠' : '🟡');
+
+  const el = document.createElement('div');
+  el.className = `pothole-dot-marker sev-${sev}`;
+  el.setAttribute('role', 'button');
+  el.setAttribute('title', `${sevTitle} Pothole`);
+
+  el.innerHTML = `
+    <div class="pothole-dot-pulse sev-${sev}"></div>
+    <div class="pothole-dot-core sev-${sev}"></div>
+  `;
+
+  // Create 2D information popup
+  const confPct = Math.round((pothole.confidence || 0.5) * 100);
+  const accelText = (pothole.accel_peak != null && !isNaN(pothole.accel_peak))
+    ? `${parseFloat(pothole.accel_peak).toFixed(1)} m/s²`
+    : 'N/A';
+  const reportCount = pothole.report_count || 1;
+
+  const popupHTML = `
+    <div class="pothole-2d-popup">
+      <div class="pothole-popup-header sev-${sev}">
+        <span class="pothole-popup-badge">${sevEmoji} ${sevTitle}</span>
+        <span class="pothole-popup-id">#${pothole.id || ''}</span>
+      </div>
+      <div class="pothole-popup-body">
+        <div class="pothole-stat-row">
+          <span class="pothole-stat-label">Confidence:</span>
+          <span class="pothole-stat-val"><strong>${confPct}%</strong></span>
+        </div>
+        <div class="pothole-stat-row">
+          <span class="pothole-stat-label">Reports:</span>
+          <span class="pothole-stat-val"><strong>${reportCount}</strong></span>
+        </div>
+        <div class="pothole-stat-row">
+          <span class="pothole-stat-label">Impact Spike:</span>
+          <span class="pothole-stat-val"><strong>${accelText}</strong></span>
+        </div>
+        <div class="pothole-coords">
+          📍 ${parseFloat(pothole.latitude).toFixed(5)}, ${parseFloat(pothole.longitude).toFixed(5)}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const popup = new maplibregl.Popup({
+    offset: 16,
+    closeButton: true,
+    closeOnClick: false,
+    className: 'pothole-map-popup'
+  }).setHTML(popupHTML);
+
+  const marker = new maplibregl.Marker({
+    element: el,
+    anchor: 'center'
+  })
+    .setLngLat([pothole.longitude, pothole.latitude])
+    .setPopup(popup)
+    .addTo(map);
+
+  return marker;
+}
+
 window.filterMarkers = function() {
   // Clear any existing DOM pothole markers
-  activePotholeMarkers.forEach(m => m.remove());
+  activePotholeMarkers.forEach(m => {
+    try { m.remove(); } catch (e) {}
+  });
   activePotholeMarkers = [];
 
   const activeRouteCoords = currentRouteCoordinates || (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
 
-  let routePotholes = [];
-  if (activeRouteCoords && activeRouteCoords.length > 0) {
-    routePotholes = filterPotholesAlongRoute(
-      activeRouteCoords,
-      window.ROUTE_PROXIMITY_THRESHOLD_METERS
-    );
+  // When no destination/route is active and not in navigation mode, keep map page clean (no pothole marks shown)
+  if (!activeRouteCoords || activeRouteCoords.length === 0) {
+    const countEl = document.getElementById('route-potholes-count');
+    if (countEl) countEl.textContent = '0';
+    updateRoadConditionUI([]);
+    return;
   }
+
+  // When destination is searched or during navigation, filter and accurately display 2D pothole marks along the route
+  const routePotholes = filterPotholesAlongRoute(
+    activeRouteCoords,
+    window.ROUTE_PROXIMITY_THRESHOLD_METERS || 35
+  );
 
   const countEl = document.getElementById('route-potholes-count');
   if (countEl) {
     countEl.textContent = routePotholes.length;
   }
 
-  // Remove all pothole markers from the map per user specification (clean map view)
+  updateRoadConditionUI(routePotholes);
+
+  // Render accurate 2D color-classified markers (Red = High, Orange = Medium, Yellow = Low)
+  // STRICTLY in Navigation Mode (ONLY when user clicks "Start Navigation" and active navigation is running)
+  const isNavigating = (typeof NAV !== 'undefined' && NAV && NAV.isNavigating === true);
+  if (isNavigating && map) {
+    routePotholes.forEach(p => {
+      const marker = create2DPotholeMarker(p);
+      if (marker) {
+        activePotholeMarkers.push(marker);
+      }
+    });
+  }
 };
 
 function updateRoadConditionUI(routePotholes = []) {
@@ -854,14 +942,26 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-function getDistanceToSegmentMeters(px, py, x1, y1, x2, y2) {
-  const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
-  if (l2 === 0) return haversineMeters(px, py, x1, y1);
-  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
-  t = Math.max(0, Math.min(1, t));
-  const projX = x1 + t * (x2 - x1);
-  const projY = y1 + t * (y2 - y1);
-  return haversineMeters(px, py, projX, projY);
+function getDistanceToSegmentMeters(lat, lon, lat1, lon1, lat2, lon2) {
+  const cosLat = Math.cos(lat * Math.PI / 180);
+  const mPerDegLat = 111132.92;
+  const mPerDegLon = 111412.84 * cosLat;
+
+  const vx = (lon2 - lon1) * mPerDegLon;
+  const vy = (lat2 - lat1) * mPerDegLat;
+  const wx = (lon - lon1) * mPerDegLon;
+  const wy = (lat - lat1) * mPerDegLat;
+
+  const c1 = wx * vx + wy * vy;
+  if (c1 <= 0) return haversineMeters(lat, lon, lat1, lon1);
+
+  const c2 = vx * vx + vy * vy;
+  if (c2 <= c1) return haversineMeters(lat, lon, lat2, lon2);
+
+  const b = c1 / c2;
+  const projLat = lat1 + b * (lat2 - lat1);
+  const projLon = lon1 + b * (lon2 - lon1);
+  return haversineMeters(lat, lon, projLat, projLon);
 }
 
 // ── UI Toast & Audio Mute ───────────────────────────────────────────

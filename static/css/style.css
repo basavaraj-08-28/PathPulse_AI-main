@@ -3029,3 +3029,160 @@ body.live-nav-active .pathole-warning-card {
   pointer-events: none;
   letter-spacing: 0.2px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Clean 2D Flat Circular Pothole Dots (Leaflet Road Marker Design)
+   ═══════════════════════════════════════════════════════════════════ */
+.pothole-dot-marker {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.pothole-dot-pulse {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: potholeDotPulse 2.4s ease-out infinite;
+}
+
+.pothole-dot-pulse.sev-high {
+  background: rgba(239, 68, 68, 0.45);
+}
+
+.pothole-dot-pulse.sev-medium {
+  background: rgba(249, 115, 22, 0.45);
+}
+
+.pothole-dot-pulse.sev-low {
+  background: rgba(234, 179, 8, 0.4);
+}
+
+@keyframes potholeDotPulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.pothole-dot-core {
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  z-index: 2;
+}
+
+/* Color Classification */
+.pothole-dot-core.sev-high {
+  background: #ef4444; /* High = Solid Red Circle */
+  width: 18px;
+  height: 18px;
+}
+
+.pothole-dot-core.sev-medium {
+  background: #f97316; /* Medium = Solid Orange Circle */
+  width: 15px;
+  height: 15px;
+}
+
+.pothole-dot-core.sev-low {
+  background: #eab308; /* Low = Solid Yellow Circle */
+  width: 13px;
+  height: 13px;
+}
+
+.pothole-dot-marker:hover .pothole-dot-core {
+  transform: scale(1.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* 2D Pothole Popups */
+.pothole-map-popup .maplibregl-popup-content {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  border-radius: 12px !important;
+  padding: 12px 14px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  font-family: 'Inter', -apple-system, sans-serif !important;
+  min-width: 190px;
+}
+
+.pothole-2d-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pothole-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.pothole-popup-badge {
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pothole-popup-header.sev-high .pothole-popup-badge {
+  color: #dc2626;
+}
+
+.pothole-popup-header.sev-medium .pothole-popup-badge {
+  color: #ea580c;
+}
+
+.pothole-popup-header.sev-low .pothole-popup-badge {
+  color: #ca8a04;
+}
+
+.pothole-popup-id {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #94a3b8;
+}
+
+.pothole-popup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pothole-stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #475569;
+}
+
+.pothole-stat-row strong {
+  color: #0f172a;
+}
+
+.pothole-coords {
+  margin-top: 4px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #64748b;
+  background: #f8fafc;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
