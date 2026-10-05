@@ -19,18 +19,81 @@
 
   <!-- ── Navbar ──────────────────────────────────────────────────── -->
   <nav class="navbar" id="navbar">
-    <a href="/" class="navbar-brand">
-      <div class="logo-icon">🛣️</div>
-      <div>
-        <h1>PathPulse</h1>
-        <span>Ride & Navigation</span>
-      </div>
-    </a>
+    <div class="navbar-top">
+      <a href="/" class="navbar-brand">
+        <div class="logo-icon">
+          <svg width="42" height="42" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="logo-grad-detect" x1="0" y1="0" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#0284c7"/>
+                <stop offset="60%" stop-color="#0369a1"/>
+                <stop offset="100%" stop-color="#075985"/>
+              </linearGradient>
+              <clipPath id="logo-clip-detect">
+                <rect width="44" height="44" rx="11" fill="white"/>
+              </clipPath>
+            </defs>
+            <g clip-path="url(#logo-clip-detect)">
+              <rect width="44" height="44" fill="url(#logo-grad-detect)"/>
+              <path d="M-4 30C8 22 18 18 36 20C42 21 46 23 50 26V48H-4V30Z" fill="#22c55e"/>
+              <path d="M-2 28C10 20 20 16 38 18C44 19 48 21 52 24V48H-2V28Z" fill="#16a34a" opacity="0.6"/>
+              <path d="M-2 44C10 38 18 29 25 14H35C29 32 18 42 6 48H-2V44Z" fill="#1e293b"/>
+              <path d="M3 46C13 40 20 30 27 15H31C25 31 16 42 4 48H3V46Z" fill="#334155"/>
+              <path d="M4 45L8 41M12 35L16 30M19 25L22 20M25 16L27 14" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+              <g transform="translate(23, 7)">
+                <path d="M6 0C3.79 0 2 1.79 2 4C2 6.5 6 11 6 11S10 6.5 10 4C10 1.79 8.21 0 6 0Z" fill="#ffffff"/>
+                <circle cx="6" cy="4" r="2" fill="#0d9488"/>
+              </g>
+              <g transform="translate(9, 18)">
+                <path d="M6 0C3.79 0 2 1.79 2 4C2 6.5 6 11 6 11S10 6.5 10 4C10 1.79 8.21 0 6 0Z" fill="#ffffff"/>
+                <circle cx="6" cy="4" r="2" fill="#22c55e"/>
+              </g>
+            </g>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>PathPulse</h1>
+          <span>AI Pothole Detection</span>
+        </div>
+      </a>
+    </div>
     <ul class="nav-links">
-      <li><a href="/">Dashboard</a></li>
-      <li><a href="/map">Map</a></li>
-      <li><a href="/detect" class="active">Start Ride</a></li>
-      <li><a href="/admin">Admin</a></li>
+      <li>
+        <a href="/">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="14" width="7" height="7" rx="1.5" />
+            <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          </svg>
+          <span>Dashboard</span>
+        </a>
+      </li>
+      <li>
+        <a href="/map">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>
+          </svg>
+          <span>Map</span>
+        </a>
+      </li>
+      <li>
+        <a href="/detect" class="active">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+          </svg>
+          <span>Start Ride</span>
+        </a>
+      </li>
+      <li>
+        <a href="/admin">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span>Admin</span>
+        </a>
+      </li>
     </ul>
   </nav>
 
