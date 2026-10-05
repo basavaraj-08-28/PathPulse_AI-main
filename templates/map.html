@@ -267,6 +267,130 @@
       transition: transform 0.3s ease;
     }
 
+    /* ── Map Layers Button & Popup ───────────────────────────────── */
+    .maplibregl-ctrl-layers {
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      width: 29px !important;
+      height: 29px !important;
+      padding: 0 !important;
+      border: 0 !important;
+      box-sizing: border-box !important;
+      background-color: transparent !important;
+      cursor: pointer !important;
+      outline: 0 !important;
+      color: #334155 !important;
+      transition: all 0.2s ease !important;
+      border-top: 1px solid #e2e8f0 !important;
+    }
+
+    .maplibregl-ctrl-layers:hover {
+      background-color: #f1f5f9 !important;
+      color: #059669 !important;
+    }
+
+    .maplibregl-ctrl-layers svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+    }
+
+    .map-layer-menu {
+      position: absolute;
+      bottom: 75px;
+      right: 48px;
+      z-index: 1010;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1.5px solid #e2e8f0;
+      border-radius: 14px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+      padding: 10px;
+      width: 175px;
+      animation: fadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .map-layer-header {
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+      margin-bottom: 8px;
+      padding-left: 4px;
+    }
+
+    .map-layer-options {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .map-style-opt {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 7px 10px;
+      border-radius: 10px;
+      border: 1.5px solid transparent;
+      background: #ffffff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: #334155;
+      transition: all 0.15s ease;
+      text-align: left;
+      box-sizing: border-box;
+    }
+
+    .map-style-opt:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+
+    .map-style-opt.active {
+      background: #e6f7ef;
+      color: #047857;
+      border-color: rgba(5, 150, 105, 0.3);
+    }
+
+    .style-icon-box {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f1f5f9;
+      color: #475569;
+      flex-shrink: 0;
+    }
+
+    .map-style-opt.active .style-icon-box {
+      background: #047857;
+      color: #ffffff;
+    }
+
+    .style-name {
+      flex: 1;
+    }
+
+    .style-check {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: #059669;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .map-style-opt.active .style-check {
+      opacity: 1;
+    }
+
     /* ── Map container fills remaining available viewport ────── */
     .map-container {
       flex: 1;
@@ -608,6 +732,44 @@
           <button class="btn-live-end" id="btn-live-end" onclick="stopNavigation()" title="End Navigation">
             <span class="end-icon">✕</span>
             <span>End Navigation</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Map Layer / Style Switcher Popup Menu ─────────────────── -->
+      <div id="map-layer-menu" class="map-layer-menu" style="display: none;">
+        <div class="map-layer-header">Map View</div>
+        <div class="map-layer-options">
+          <button class="map-style-opt active" data-style="default" onclick="setMapStyle('default')">
+            <div class="style-icon-box">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="9" y1="21" x2="9" y2="9"/>
+              </svg>
+            </div>
+            <span class="style-name">Default</span>
+            <span class="style-check">✓</span>
+          </button>
+          <button class="map-style-opt" data-style="satellite" onclick="setMapStyle('satellite')">
+            <div class="style-icon-box">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M12 3a15.3 15.3 0 0 1 4 9 15.3 15.3 0 0 1-4 9 15.3 15.3 0 0 1-4-9 15.3 15.3 0 0 1 4-9z"/>
+                <path d="M3 12h18"/>
+              </svg>
+            </div>
+            <span class="style-name">Satellite</span>
+            <span class="style-check">✓</span>
+          </button>
+          <button class="map-style-opt" data-style="terrain" onclick="setMapStyle('terrain')">
+            <div class="style-icon-box">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 20l6-9 4 5 5-8 3 12H3z"/>
+              </svg>
+            </div>
+            <span class="style-name">Terrain</span>
+            <span class="style-check">✓</span>
           </button>
         </div>
       </div>

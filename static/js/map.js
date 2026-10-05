@@ -59,14 +59,15 @@ function initMap() {
 
   window.ppMap = map;
 
-  // Add zoom and rotation controls to bottom-right
+  // Add zoom controls to bottom-right (compass removed)
   map.addControl(new maplibregl.NavigationControl({
-    visualizePitch: true,
+    visualizePitch: false,
     showZoom: true,
-    showCompass: true
+    showCompass: false
   }), 'bottom-right');
 
   map.on('load', () => {
+    setupLayerSwitcherButton();
     setup3DBuildingsLayer();
     setupRouteLayers();
     loadPatholes();
@@ -503,6 +504,153 @@ window.refreshMap = function() {
   loadPatholes();
   showToast('🔄 Map and pothole data refreshed', 'info');
 };
+
+// ── Map Layers & Style Switcher (Default, Satellite, Terrain) ────────
+const SATELLITE_STYLE = {
+  version: 8,
+  sources: {
+    'esri-satellite': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+      ],
+      tileSize: 256,
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
+    },
+    'esri-labels': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'
+      ],
+      tileSize: 256
+    }
+  },
+  layers: [
+    {
+      id: 'esri-satellite-layer',
+      type: 'raster',
+      source: 'esri-satellite',
+      minzoom: 0,
+      maxzoom: 19
+    },
+    {
+      id: 'esri-labels-layer',
+      type: 'raster',
+      source: 'esri-labels',
+      minzoom: 0,
+      maxzoom: 19
+    }
+  ]
+};
+
+const TERRAIN_STYLE = {
+  version: 8,
+  sources: {
+    'esri-terrain': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}'
+      ],
+      tileSize: 256,
+      attribution: 'Esri, DeLorme, NAVTEQ, TomTom, USGS, NPS'
+    }
+  },
+  layers: [
+    {
+      id: 'esri-terrain-layer',
+      type: 'raster',
+      source: 'esri-terrain',
+      minzoom: 0,
+      maxzoom: 19
+    }
+  ]
+};
+
+let currentMapStyle = 'default';
+
+function setupLayerSwitcherButton() {
+  const ctrlGroup = document.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group');
+  if (ctrlGroup && !ctrlGroup.querySelector('.maplibregl-ctrl-layers')) {
+    const layerBtn = document.createElement('button');
+    layerBtn.className = 'maplibregl-ctrl-layers';
+    layerBtn.type = 'button';
+    layerBtn.title = 'Switch Map View (Default, Satellite, Terrain)';
+    layerBtn.setAttribute('aria-label', 'Switch Map View');
+    layerBtn.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+        <polyline points="2 17 12 22 22 17"/>
+        <polyline points="2 12 12 17 22 12"/>
+      </svg>
+    `;
+    layerBtn.onclick = (e) => {
+      e.stopPropagation();
+      window.toggleLayerMenu(e);
+    };
+    ctrlGroup.appendChild(layerBtn);
+  }
+}
+
+window.setMapStyle = function(styleKey) {
+  if (!map) return;
+  currentMapStyle = styleKey;
+
+  let targetStyle;
+  if (styleKey === 'satellite') {
+    targetStyle = SATELLITE_STYLE;
+  } else if (styleKey === 'terrain') {
+    targetStyle = TERRAIN_STYLE;
+  } else {
+    targetStyle = 'https://tiles.openfreemap.org/styles/bright';
+  }
+
+  // Update UI active states in the popup
+  document.querySelectorAll('.map-style-opt').forEach(opt => {
+    opt.classList.toggle('active', opt.dataset.style === styleKey);
+  });
+
+  // Switch style in MapLibre
+  map.setStyle(targetStyle);
+
+  // When new style loads, restore layers & markers
+  map.once('style.load', () => {
+    if (styleKey === 'default') {
+      setup3DBuildingsLayer();
+    }
+    setupRouteLayers();
+    if (typeof filterMarkers === 'function') {
+      filterMarkers();
+    }
+    if (typeof NAV !== 'undefined' && NAV && NAV.currentRouteGeoJSON) {
+      const activeSrc = map.getSource('active-route');
+      if (activeSrc) activeSrc.setData(NAV.currentRouteGeoJSON);
+    }
+  });
+
+  const menu = document.getElementById('map-layer-menu');
+  if (menu) menu.style.display = 'none';
+
+  const label = styleKey.charAt(0).toUpperCase() + styleKey.slice(1);
+  showToast(`🗺️ Switched to ${label} map view`, 'info');
+};
+
+window.toggleLayerMenu = function(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('map-layer-menu');
+  if (menu) {
+    menu.style.display = (menu.style.display === 'none' || menu.style.display === '') ? 'block' : 'none';
+  }
+};
+
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('map-layer-menu');
+  const btn = document.querySelector('.maplibregl-ctrl-layers');
+  if (menu && menu.style.display === 'block') {
+    if (!menu.contains(e.target) && (!btn || !btn.contains(e.target))) {
+      menu.style.display = 'none';
+    }
+  }
+});
 
 // ── 2D Flat Pothole Circular Dots (Leaflet Style Clean Road Dots) ────────
 function create2DPotholeMarker(pothole) {
