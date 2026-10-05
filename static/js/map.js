@@ -34,7 +34,7 @@ window.selectedRouteIndex = selectedRouteIndex;
 
 let activePotholeMarkers = [];
 let isMuted = false;
-window.ROUTE_PROXIMITY_THRESHOLD_METERS = 25;
+window.ROUTE_PROXIMITY_THRESHOLD_METERS = 20;
 
 // Severity Color Definitions
 const SEVERITY_COLORS = {
@@ -402,11 +402,14 @@ function create2DPotholeMarker(pothole) {
     className: 'pothole-map-popup'
   }).setHTML(popupHTML);
 
+  const markerLat = pothole.markerLat != null ? Number(pothole.markerLat) : Number(pothole.latitude);
+  const markerLng = pothole.markerLng != null ? Number(pothole.markerLng) : Number(pothole.longitude);
+
   const marker = new maplibregl.Marker({
     element: el,
     anchor: 'center'
   })
-    .setLngLat([pothole.longitude, pothole.latitude])
+    .setLngLat([markerLng, markerLat])
     .setPopup(popup)
     .addTo(map);
 
@@ -433,7 +436,7 @@ window.filterMarkers = function() {
   // When destination is searched or during navigation, filter and accurately display 2D pothole marks along the route
   const routePotholes = filterPotholesAlongRoute(
     activeRouteCoords,
-    window.ROUTE_PROXIMITY_THRESHOLD_METERS || 35
+    window.ROUTE_PROXIMITY_THRESHOLD_METERS || 20
   );
 
   const countEl = document.getElementById('route-potholes-count');
@@ -499,7 +502,7 @@ function updateRoadConditionUI(routePotholes = []) {
 }
 window.updateRoadConditionUI = updateRoadConditionUI;
 
-function filterPotholesAlongRoute(routeCoords, thresholdMeters) {
+function filterPotholesAlongRoute(routeCoords, thresholdMeters = 20) {
   if (!routeCoords || routeCoords.length === 0) return [];
 
   const showLow = document.getElementById('filter-low')?.checked ?? true;
@@ -513,26 +516,23 @@ function filterPotholesAlongRoute(routeCoords, thresholdMeters) {
     if (p.severity === 'medium' && !showMed) return;
     if (p.severity === 'high' && !showHigh) return;
 
-    let minDist = Infinity;
-    for (let i = 0; i < routeCoords.length - 1; i++) {
-      const p1 = routeCoords[i];
-      const p2 = routeCoords[i + 1];
-      const d = getDistanceToSegmentMeters(
-        p.latitude, p.longitude,
-        p1.lat || p1[1], p1.lng || p1[0],
-        p2.lat || p2[1], p2.lng || p2[0]
-      );
-      if (d < minDist) minDist = d;
-    }
+    const pLat = Number(p.latitude);
+    const pLng = Number(p.longitude);
+    if (isNaN(pLat) || isNaN(pLng)) return;
 
-    if (minDist <= thresholdMeters) {
-      p.distToRoute = minDist;
+    const nearest = getNearestPointOnRoute(pLat, pLng, routeCoords);
+
+    if (nearest.distanceMeters <= thresholdMeters) {
+      p.distToRoute = nearest.distanceMeters;
+      p.markerLat = nearest.lat;
+      p.markerLng = nearest.lng;
       result.push(p);
     }
   });
 
   return result;
 }
+window.filterPotholesAlongRoute = filterPotholesAlongRoute;
 
 // ── Destination Marker Helper ───────────────────────────────────────
 function setDestinationMarker(lat, lng, name = 'Destination') {
@@ -941,7 +941,7 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-function getDistanceToSegmentMeters(lat, lon, lat1, lon1, lat2, lon2) {
+function getNearestPointOnSegment(lat, lon, lat1, lon1, lat2, lon2) {
   const cosLat = Math.cos(lat * Math.PI / 180);
   const mPerDegLat = 111132.92;
   const mPerDegLon = 111412.84 * cosLat;
@@ -952,15 +952,71 @@ function getDistanceToSegmentMeters(lat, lon, lat1, lon1, lat2, lon2) {
   const wy = (lat - lat1) * mPerDegLat;
 
   const c1 = wx * vx + wy * vy;
-  if (c1 <= 0) return haversineMeters(lat, lon, lat1, lon1);
+  if (c1 <= 0) {
+    return {
+      lat: lat1,
+      lng: lon1,
+      distanceMeters: haversineMeters(lat, lon, lat1, lon1)
+    };
+  }
 
   const c2 = vx * vx + vy * vy;
-  if (c2 <= c1) return haversineMeters(lat, lon, lat2, lon2);
+  if (c2 <= c1 || c2 === 0) {
+    return {
+      lat: lat2,
+      lng: lon2,
+      distanceMeters: haversineMeters(lat, lon, lat2, lon2)
+    };
+  }
 
   const b = c1 / c2;
   const projLat = lat1 + b * (lat2 - lat1);
   const projLon = lon1 + b * (lon2 - lon1);
-  return haversineMeters(lat, lon, projLat, projLon);
+  return {
+    lat: projLat,
+    lng: projLon,
+    distanceMeters: haversineMeters(lat, lon, projLat, projLon)
+  };
+}
+window.getNearestPointOnSegment = getNearestPointOnSegment;
+
+function getNearestPointOnRoute(potholeLat, potholeLng, routeCoords) {
+  if (!routeCoords || routeCoords.length < 2) {
+    return { lat: Number(potholeLat), lng: Number(potholeLng), distanceMeters: Infinity };
+  }
+
+  let best = {
+    lat: Number(potholeLat),
+    lng: Number(potholeLng),
+    distanceMeters: Infinity
+  };
+
+  const pLat = Number(potholeLat);
+  const pLng = Number(potholeLng);
+
+  for (let i = 0; i < routeCoords.length - 1; i++) {
+    const p1 = routeCoords[i];
+    const p2 = routeCoords[i + 1];
+
+    const lat1 = Number(p1.lat != null ? p1.lat : (p1.latitude != null ? p1.latitude : p1[1]));
+    const lon1 = Number(p1.lng != null ? p1.lng : (p1.lon != null ? p1.lon : (p1.longitude != null ? p1.longitude : p1[0])));
+    const lat2 = Number(p2.lat != null ? p2.lat : (p2.latitude != null ? p2.latitude : p2[1]));
+    const lon2 = Number(p2.lng != null ? p2.lng : (p2.lon != null ? p2.lon : (p2.longitude != null ? p2.longitude : p2[0])));
+
+    if (isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) continue;
+
+    const segResult = getNearestPointOnSegment(pLat, pLng, lat1, lon1, lat2, lon2);
+    if (segResult.distanceMeters < best.distanceMeters) {
+      best = segResult;
+    }
+  }
+
+  return best;
+}
+window.getNearestPointOnRoute = getNearestPointOnRoute;
+
+function getDistanceToSegmentMeters(lat, lon, lat1, lon1, lat2, lon2) {
+  return getNearestPointOnSegment(lat, lon, lat1, lon1, lat2, lon2).distanceMeters;
 }
 
 // ── UI Toast & Audio Mute ───────────────────────────────────────────
