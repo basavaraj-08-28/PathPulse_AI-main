@@ -379,7 +379,12 @@ window.toggle3DView = function() {
 
   const btn = document.getElementById('btn-toggle-3d');
   if (btn) {
-    btn.textContent = is3DMode ? '🗺️ 2D' : '🏢 3D';
+    const textSpan = document.getElementById('btn-3d-text');
+    if (textSpan) {
+      textSpan.textContent = is3DMode ? '2D' : '3D';
+    } else {
+      btn.textContent = is3DMode ? '🗺️ 2D' : '🏢 3D';
+    }
     btn.classList.toggle('active', is3DMode);
   }
   showToast(is3DMode ? '🏢 3D Perspective Mode Enabled' : '🗺️ 2D Flat Mode Enabled', 'info');

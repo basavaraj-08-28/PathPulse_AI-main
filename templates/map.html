@@ -48,119 +48,207 @@
       position: relative;
     }
 
-    /* ── Section Header & Controls ───────────────────────────── */
+    /* ── Section Header & Controls (Matching Image 2) ────────── */
     .section-header {
       display: flex !important;
       flex-direction: column !important;
-      align-items: flex-start !important;
+      align-items: stretch !important;
       justify-content: flex-start !important;
-      padding: 6px 16px 5px !important;
+      padding: 10px 14px 8px !important;
       margin-bottom: 0 !important;
-      gap: 4px !important;
+      gap: 8px !important;
       flex-shrink: 0;
-      background: rgba(244, 247, 251, 0.98);
+      background: #f8fafc;
       backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid #e2e8f0;
       min-height: 0;
       position: relative;
       z-index: 1005;
       overflow: visible;
     }
 
-    .section-header h3 {
-      font-size: 0.95rem !important;
-      font-weight: 700 !important;
-      margin: 0 !important;
-      line-height: 1.3 !important;
-      display: block !important;
-      visibility: visible !important;
-      color: var(--text-primary) !important;
-    }
-
-    /* ── Controls row: responsive flex wrapping ──────────────── */
-    .map-controls {
-      display: flex !important;
-      flex-wrap: wrap;
+    /* Row 1: Search row with crosshair button */
+    .search-row {
+      display: flex;
       align-items: center;
-      gap: 5px !important;
+      gap: 8px;
       width: 100%;
     }
 
-    /* Search input container */
     .search-container {
-      flex: 1 1 180px;
-      min-width: 130px;
-      max-width: 260px;
+      flex: 1;
       position: relative;
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .search-input-icon {
+      position: absolute;
+      left: 14px;
+      color: #64748b;
+      pointer-events: none;
+      z-index: 2;
     }
 
     #map-search {
       width: 100%;
-      font-size: 0.8rem;
-      padding: 6px 10px;
-      height: 30px;
+      height: 42px;
+      padding: 0 16px 0 42px;
+      border-radius: 24px;
+      border: 1.5px solid #e2e8f0;
+      background: #ffffff;
+      font-size: 0.9rem;
+      font-family: inherit;
+      color: #1e293b;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+      outline: none;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       box-sizing: border-box;
-      border-radius: var(--radius-sm);
     }
 
-    /* Compact buttons */
-    .btn-sm {
-      padding: 5px 10px !important;
-      font-size: 0.76rem !important;
-      height: 30px;
-      box-sizing: border-box;
-      display: inline-flex;
+    #map-search:focus {
+      border-color: #059669;
+      box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.12);
+    }
+
+    #map-search::placeholder {
+      color: #94a3b8;
+      font-size: 0.88rem;
+    }
+
+    .crosshair-locate-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 1.5px solid #e2e8f0;
+      display: flex;
       align-items: center;
       justify-content: center;
-    }
-
-    .search-panel-btn {
-      padding: 4px 8px !important;
-      font-size: 0.74rem !important;
-      height: 30px;
-      box-sizing: border-box;
-      display: inline-flex;
-      align-items: center;
-      border-radius: var(--radius-sm);
-    }
-
-    .auto-nav-toggle-wrap {
-      padding: 3px 8px !important;
-      font-size: 0.74rem !important;
-      height: 30px;
-      box-sizing: border-box;
-      display: inline-flex;
-      align-items: center;
-      border-radius: var(--radius-sm);
-    }
-
-    .filter-group {
-      padding: 3px 8px !important;
-      font-size: 0.76rem !important;
-      gap: 6px !important;
-      height: 30px;
-      box-sizing: border-box;
-      display: inline-flex;
-      align-items: center;
-      border-radius: var(--radius-sm);
-    }
-
-    .mute-btn {
-      font-size: 0.95rem !important;
-      padding: 3px 6px;
-      height: 30px;
-      box-sizing: border-box;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .control-divider {
-      width: 1px;
-      height: 18px;
-      background: var(--border-strong);
+      cursor: pointer;
+      color: #334155;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
       flex-shrink: 0;
-      margin: 0 1px;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .crosshair-locate-btn:hover {
+      background: #f1f5f9;
+      color: #059669;
+      border-color: #cbd5e1;
+    }
+
+    .crosshair-locate-btn:active {
+      transform: scale(0.93);
+    }
+
+    /* Row 2: Filter Pills Strip */
+    .filter-pills-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding-bottom: 2px;
+    }
+
+    .filter-pills-row::-webkit-scrollbar {
+      display: none;
+    }
+
+    .filter-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 14px;
+      height: 34px;
+      border-radius: 20px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      font-family: inherit;
+      background: #ffffff;
+      border: 1.5px solid #e2e8f0;
+      color: #334155;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+      transition: all 0.2s ease;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      box-sizing: border-box;
+    }
+
+    .filter-pill:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+
+    .filter-pill:active {
+      transform: scale(0.96);
+    }
+
+    .filter-pill .pill-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    /* All pill active state */
+    #filter-pill-all.active {
+      background: #047857 !important;
+      color: #ffffff !important;
+      border-color: #047857 !important;
+      box-shadow: 0 2px 8px rgba(4, 120, 87, 0.25);
+    }
+
+    #filter-pill-all.active svg {
+      stroke: #ffffff;
+    }
+
+    /* Severity dots */
+    .pill-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .pill-dot-low {
+      background: #22c55e;
+      box-shadow: 0 0 5px rgba(34, 197, 94, 0.6);
+    }
+
+    .pill-dot-medium {
+      background: #f59e0b;
+      box-shadow: 0 0 5px rgba(245, 158, 11, 0.6);
+    }
+
+    .pill-dot-high {
+      background: #ef4444;
+      box-shadow: 0 0 5px rgba(239, 68, 68, 0.6);
+    }
+
+    /* 3D button */
+    #btn-toggle-3d.active {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-color: #93c5fd;
+    }
+
+    /* My location pill */
+    #btn-locate {
+      color: #1e40af;
+    }
+
+    #btn-locate:hover {
+      background: #eff6ff;
+      border-color: #bfdbfe;
     }
 
     /* ── Map container fills remaining available viewport ────── */
@@ -189,47 +277,26 @@
       }
 
       .section-header {
-        padding: 4px 8px 3px !important;
-        gap: 3px !important;
-      }
-
-      .section-header h3 {
-        font-size: 0.84rem !important;
-      }
-
-      .map-controls {
-        gap: 3px !important;
-      }
-
-      .search-container {
-        flex: 1 1 120px;
-        min-width: 100px;
-        max-width: 100%;
+        padding: 6px 10px 6px !important;
+        gap: 6px !important;
       }
 
       #map-search {
-        font-size: 0.75rem;
-        padding: 4px 8px;
-        height: 27px;
+        height: 38px;
+        font-size: 0.84rem;
+        padding-left: 38px;
       }
 
-      .btn-sm,
-      .search-panel-btn,
-      .auto-nav-toggle-wrap,
-      .filter-group,
-      .mute-btn {
-        height: 27px;
-        font-size: 0.72rem !important;
-        padding: 2px 6px !important;
+      .crosshair-locate-btn {
+        width: 38px;
+        height: 38px;
       }
 
-      .control-divider {
-        display: none !important;
-      }
-
-      .leaflet-control-layers-toggle {
-        width: 36px !important;
-        height: 36px !important;
+      .filter-pill {
+        height: 32px;
+        padding: 4px 11px;
+        font-size: 0.78rem;
+        gap: 5px;
       }
     }
   </style>
@@ -313,13 +380,14 @@
   <!-- ── Map ─────────────────────────────────────────────────────── -->
   <section class="map-section" id="map-section">
     <div class="section-header">
-      <h3>🗺️ Live <span class="gradient-text">Pathole Map</span></h3>
 
-      <!-- ── Map Controls Row (single flex row) ─────────────────── -->
-      <div class="map-controls">
-
-        <!-- Search box — dropdown panels anchor to this -->
+      <!-- Row 1: Search box + GPS Crosshair Target button -->
+      <div class="search-row">
         <div class="search-container">
+          <svg class="search-input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="21" y1="21" x2="16.5" y2="16.5" />
+          </svg>
           <input type="text" id="map-search" placeholder="Search destination..." autocomplete="off">
           <div id="search-suggestions" class="search-suggestions"></div>
 
@@ -336,44 +404,77 @@
           </div>
         </div>
 
-        <!-- Recent / Favourites / Auto-Nav — inline with the search box -->
-        <button class="search-panel-btn" id="btn-recent" onclick="toggleRecentPanel()" title="Recent Destinations">
-          🕐 Recent
+        <!-- Crosshair locate GPS button -->
+        <button class="crosshair-locate-btn" id="btn-crosshair" onclick="locateUser()" title="Locate Current Position">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="7" />
+            <line x1="12" y1="2" x2="12" y2="5" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+            <line x1="2" y1="12" x2="5" y2="12" />
+            <line x1="19" y1="12" x2="22" y2="12" />
+            <circle cx="12" cy="12" r="2" fill="currentColor" />
+          </svg>
         </button>
-        <button class="search-panel-btn" id="btn-favs" onclick="toggleFavPanel()" title="Favourite Destinations">
-          ⭐ Favs
+      </div>
+
+      <!-- Row 2: Filter and Action Pills -->
+      <div class="filter-pills-row">
+        <!-- All Pill -->
+        <button class="filter-pill active" id="filter-pill-all" onclick="setFilterSeverity('all')" title="Show All Potholes">
+          <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <span>All</span>
         </button>
-        <label class="auto-nav-toggle-wrap" title="Auto-start navigation when destination selected">
-          <input type="checkbox" id="auto-nav-toggle"> Auto-Nav
-        </label>
 
-        <!-- Divider -->
-        <span class="control-divider"></span>
+        <!-- Low Pill -->
+        <button class="filter-pill active" id="filter-pill-low" onclick="setFilterSeverity('low')" title="Toggle Low Severity">
+          <input type="checkbox" id="filter-low" checked style="display:none;" onchange="filterMarkers()">
+          <span class="pill-dot pill-dot-low"></span>
+          <span>Low</span>
+        </button>
 
-        <!-- Severity filters -->
-        <div class="filter-group">
-          <label class="filter-label" style="color:var(--info);"><input type="checkbox" id="filter-low" checked
-              onchange="filterMarkers()"> Low</label>
-          <label class="filter-label" style="color:var(--warning);"><input type="checkbox" id="filter-medium" checked
-              onchange="filterMarkers()"> Medium</label>
-          <label class="filter-label" style="color:var(--danger);"><input type="checkbox" id="filter-high" checked
-              onchange="filterMarkers()"> High</label>
+        <!-- Medium Pill -->
+        <button class="filter-pill active" id="filter-pill-medium" onclick="setFilterSeverity('medium')" title="Toggle Medium Severity">
+          <input type="checkbox" id="filter-medium" checked style="display:none;" onchange="filterMarkers()">
+          <span class="pill-dot pill-dot-medium"></span>
+          <span>Medium</span>
+        </button>
+
+        <!-- High Pill -->
+        <button class="filter-pill active" id="filter-pill-high" onclick="setFilterSeverity('high')" title="Toggle High Severity">
+          <input type="checkbox" id="filter-high" checked style="display:none;" onchange="filterMarkers()">
+          <span class="pill-dot pill-dot-high"></span>
+          <span>High</span>
+        </button>
+
+        <!-- 3D Pill -->
+        <button class="filter-pill" id="btn-toggle-3d" onclick="toggle3DView()" title="Toggle 3D Buildings & Tilt">
+          <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+            <line x1="12" y1="22.08" x2="12" y2="12" />
+          </svg>
+          <span id="btn-3d-text">3D</span>
+        </button>
+
+        <!-- My Location Pill -->
+        <button class="filter-pill" id="btn-locate" onclick="locateUser()" title="Center on My Location">
+          <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="#2563eb">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>
+          </svg>
+          <span>My Location</span>
+        </button>
+
+        <!-- Secondary / Helper controls maintained in DOM for compatibility -->
+        <div style="display:none;">
+          <button id="btn-recent" onclick="toggleRecentPanel()"></button>
+          <button id="btn-favs" onclick="toggleFavPanel()"></button>
+          <input type="checkbox" id="auto-nav-toggle">
+          <button id="btn-mute" onclick="toggleMute()"></button>
+          <button id="btn-refresh-map" onclick="refreshMap()"></button>
         </div>
-
-        <!-- Divider -->
-        <span class="control-divider"></span>
-
-        <!-- Utility buttons -->
-        <button class="mute-btn" id="btn-mute" onclick="toggleMute()" title="Mute/Unmute Audio Warnings">🔊</button>
-        <button class="btn btn-secondary btn-sm" id="btn-toggle-3d" onclick="toggle3DView()" title="Toggle 3D Buildings & Tilt">
-          🏢 3D
-        </button>
-        <button class="btn btn-primary btn-sm" id="btn-locate" onclick="locateUser()">
-          📍 My Location
-        </button>
-        <button class="btn btn-secondary btn-sm" id="btn-refresh-map" onclick="refreshMap()">
-          🔄 Refresh
-        </button>
       </div>
     </div>
 
@@ -511,6 +612,43 @@
       navigator.serviceWorker.register('/service-worker.js')
         .then(() => console.log("Service Worker Registered"));
     }
+
+    // Helper for filter pill buttons matching Image 2
+    window.setFilterSeverity = function(type) {
+      const lowCb = document.getElementById('filter-low');
+      const medCb = document.getElementById('filter-medium');
+      const highCb = document.getElementById('filter-high');
+      const allPill = document.getElementById('filter-pill-all');
+      const lowPill = document.getElementById('filter-pill-low');
+      const medPill = document.getElementById('filter-pill-medium');
+      const highPill = document.getElementById('filter-pill-high');
+
+      if (!lowCb || !medCb || !highCb) return;
+
+      if (type === 'all') {
+        const areAllChecked = lowCb.checked && medCb.checked && highCb.checked;
+        const newState = !areAllChecked;
+        lowCb.checked = newState;
+        medCb.checked = newState;
+        highCb.checked = newState;
+      } else if (type === 'low') {
+        lowCb.checked = !lowCb.checked;
+      } else if (type === 'medium') {
+        medCb.checked = !medCb.checked;
+      } else if (type === 'high') {
+        highCb.checked = !highCb.checked;
+      }
+
+      const isAll = lowCb.checked && medCb.checked && highCb.checked;
+      if (allPill) allPill.classList.toggle('active', isAll);
+      if (lowPill) lowPill.classList.toggle('active', lowCb.checked);
+      if (medPill) medPill.classList.toggle('active', medCb.checked);
+      if (highPill) highPill.classList.toggle('active', highCb.checked);
+
+      if (typeof window.filterMarkers === 'function') {
+        window.filterMarkers();
+      }
+    };
 
     // Close dest panels when clicking anywhere on map
     document.getElementById('main-map').addEventListener('click', () => {
