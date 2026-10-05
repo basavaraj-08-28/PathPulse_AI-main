@@ -211,6 +211,160 @@ function setupRouteLayers() {
       }
     });
   }
+
+  // Navigation Potholes GeoJSON Source & Vector Circle Layers (Rendered directly on same WebGL plane as blue route)
+  if (!map.getSource('navigation-potholes')) {
+    map.addSource('navigation-potholes', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+
+    // Subtle Road Shadow for Pothole Dots
+    map.addLayer({
+      id: 'navigation-potholes-shadow',
+      type: 'circle',
+      source: 'navigation-potholes',
+      paint: {
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10, 4,
+          14, [
+            'match',
+            ['get', 'severity'],
+            'high', 7.5,
+            'medium', 6,
+            'low', 5,
+            6
+          ],
+          18, [
+            'match',
+            ['get', 'severity'],
+            'high', 11.5,
+            'medium', 9.5,
+            'low', 8,
+            9.5
+          ]
+        ],
+        'circle-color': 'rgba(0, 0, 0, 0.35)',
+        'circle-blur': 0.4,
+        'circle-translate': [0, 2]
+      }
+    });
+
+    // Solid Classified Pothole Circle Layer with Crisp White Border
+    map.addLayer({
+      id: 'navigation-potholes-layer',
+      type: 'circle',
+      source: 'navigation-potholes',
+      paint: {
+        'circle-color': [
+          'match',
+          ['get', 'severity'],
+          'high', '#ef4444',
+          'medium', '#f97316',
+          'low', '#eab308',
+          '#f97316'
+        ],
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10, 3.5,
+          14, [
+            'match',
+            ['get', 'severity'],
+            'high', 7,
+            'medium', 5.5,
+            'low', 4.5,
+            5.5
+          ],
+          18, [
+            'match',
+            ['get', 'severity'],
+            'high', 10.5,
+            'medium', 8.5,
+            'low', 7,
+            8.5
+          ]
+        ],
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10, 1.5,
+          16, 2,
+          18, 2.5
+        ],
+        'circle-opacity': 1.0,
+        'circle-stroke-opacity': 1.0
+      }
+    });
+
+    // Click handler for pothole detail popup
+    map.on('click', 'navigation-potholes-layer', (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      const p = f.properties;
+      const coords = f.geometry.coordinates.slice();
+
+      const sev = (p.severity || 'medium').toLowerCase();
+      const sevTitle = sev === 'high' ? 'High Severity' : (sev === 'medium' ? 'Medium Severity' : 'Low Severity');
+      const sevEmoji = sev === 'high' ? '🔴' : (sev === 'medium' ? '🟠' : '🟡');
+      const confPct = Math.round((parseFloat(p.confidence) || 0.5) * 100);
+      const accelText = (p.accel_peak != null && p.accel_peak !== '' && !isNaN(p.accel_peak))
+        ? `${parseFloat(p.accel_peak).toFixed(1)} m/s²`
+        : 'N/A';
+      const reportCount = p.report_count || 1;
+      const realLat = p.latitude != null ? parseFloat(p.latitude).toFixed(5) : coords[1].toFixed(5);
+      const realLng = p.longitude != null ? parseFloat(p.longitude).toFixed(5) : coords[0].toFixed(5);
+
+      const popupHTML = `
+        <div class="pothole-2d-popup">
+          <div class="pothole-popup-header sev-${sev}">
+            <span class="pothole-popup-badge">${sevEmoji} ${sevTitle}</span>
+            <span class="pothole-popup-id">#${p.id || ''}</span>
+          </div>
+          <div class="pothole-popup-body">
+            <div class="pothole-stat-row">
+              <span class="pothole-stat-label">Confidence:</span>
+              <span class="pothole-stat-val"><strong>${confPct}%</strong></span>
+            </div>
+            <div class="pothole-stat-row">
+              <span class="pothole-stat-label">Reports:</span>
+              <span class="pothole-stat-val"><strong>${reportCount}</strong></span>
+            </div>
+            <div class="pothole-stat-row">
+              <span class="pothole-stat-label">Impact Spike:</span>
+              <span class="pothole-stat-val"><strong>${accelText}</strong></span>
+            </div>
+            <div class="pothole-coords">
+              📍 ${realLat}, ${realLng}
+            </div>
+          </div>
+        </div>
+      `;
+
+      new maplibregl.Popup({
+        offset: 12,
+        closeButton: true,
+        closeOnClick: true,
+        className: 'pothole-map-popup'
+      })
+        .setLngLat(coords)
+        .setHTML(popupHTML)
+        .addTo(map);
+    });
+
+    map.on('mouseenter', 'navigation-potholes-layer', () => {
+      if (map) map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', 'navigation-potholes-layer', () => {
+      if (map) map.getCanvas().style.cursor = '';
+    });
+  }
 }
 
 // ── Toggle 3D Perspective Mode ──────────────────────────────────────
@@ -416,6 +570,41 @@ function create2DPotholeMarker(pothole) {
   return marker;
 }
 
+function updatePotholeLayerGeoJSON(potholes = []) {
+  if (!map) return;
+  if (!map.getSource('navigation-potholes')) {
+    setupRouteLayers();
+  }
+  const source = map.getSource('navigation-potholes');
+  if (!source) return;
+
+  const features = (potholes || []).map(p => ({
+    type: 'Feature',
+    geometry: {
+      type: 'Point',
+      coordinates: [
+        p.markerLng != null ? Number(p.markerLng) : Number(p.longitude),
+        p.markerLat != null ? Number(p.markerLat) : Number(p.latitude)
+      ]
+    },
+    properties: {
+      id: p.id,
+      severity: (p.severity || 'medium').toLowerCase(),
+      confidence: p.confidence || 0.5,
+      accel_peak: p.accel_peak != null ? p.accel_peak : '',
+      report_count: p.report_count || 1,
+      latitude: p.latitude,
+      longitude: p.longitude
+    }
+  }));
+
+  source.setData({
+    type: 'FeatureCollection',
+    features: features
+  });
+}
+window.updatePotholeLayerGeoJSON = updatePotholeLayerGeoJSON;
+
 window.filterMarkers = function() {
   // Clear any existing DOM pothole markers
   activePotholeMarkers.forEach(m => {
@@ -424,19 +613,21 @@ window.filterMarkers = function() {
   activePotholeMarkers = [];
 
   const activeRouteCoords = currentRouteCoordinates || (typeof NAV !== 'undefined' && NAV.currentRoute ? NAV.currentRoute : null);
+  const isNavigating = (typeof NAV !== 'undefined' && NAV && NAV.isNavigating === true);
 
-  // When no destination/route is active and not in navigation mode, keep map page clean (no pothole marks shown)
+  // When no destination/route is active or not in navigation mode, keep map page clean (no pothole marks shown)
   if (!activeRouteCoords || activeRouteCoords.length === 0) {
     const countEl = document.getElementById('route-potholes-count');
     if (countEl) countEl.textContent = '0';
     updateRoadConditionUI([]);
+    updatePotholeLayerGeoJSON([]);
     return;
   }
 
-  // When destination is searched or during navigation, filter and accurately display 2D pothole marks along the route
+  // When destination is searched or during navigation, filter and accurately calculate potholes along route
   const routePotholes = filterPotholesAlongRoute(
     activeRouteCoords,
-    window.ROUTE_PROXIMITY_THRESHOLD_METERS || 20
+    window.ROUTE_PROXIMITY_THRESHOLD_METERS || 30
   );
 
   const countEl = document.getElementById('route-potholes-count');
@@ -448,14 +639,10 @@ window.filterMarkers = function() {
 
   // Render accurate 2D color-classified markers (Red = High, Orange = Medium, Yellow = Low)
   // STRICTLY in Navigation Mode (ONLY when user clicks "Start Navigation" and active navigation is running)
-  const isNavigating = (typeof NAV !== 'undefined' && NAV && NAV.isNavigating === true);
   if (isNavigating && map) {
-    routePotholes.forEach(p => {
-      const marker = create2DPotholeMarker(p);
-      if (marker) {
-        activePotholeMarkers.push(marker);
-      }
-    });
+    updatePotholeLayerGeoJSON(routePotholes);
+  } else {
+    updatePotholeLayerGeoJSON([]);
   }
 };
 
@@ -502,7 +689,7 @@ function updateRoadConditionUI(routePotholes = []) {
 }
 window.updateRoadConditionUI = updateRoadConditionUI;
 
-function filterPotholesAlongRoute(routeCoords, thresholdMeters = 20) {
+function filterPotholesAlongRoute(routeCoords, thresholdMeters = 30) {
   if (!routeCoords || routeCoords.length === 0) return [];
 
   const showLow = document.getElementById('filter-low')?.checked ?? true;
@@ -524,8 +711,15 @@ function filterPotholesAlongRoute(routeCoords, thresholdMeters = 20) {
 
     if (nearest.distanceMeters <= thresholdMeters) {
       p.distToRoute = nearest.distanceMeters;
+
+      // KEEP ORIGINAL DATABASE LOCATION
+      p.actualLatitude = Number(p.latitude);
+      p.actualLongitude = Number(p.longitude);
+
+      // ONLY VISUAL MARKER LOCATION IS SNAPPED TO ACTIVE ROUTE
       p.markerLat = nearest.lat;
       p.markerLng = nearest.lng;
+
       result.push(p);
     }
   });
