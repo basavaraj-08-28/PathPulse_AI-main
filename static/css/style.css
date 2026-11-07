@@ -1724,7 +1724,8 @@ body {
 
 .demo-info-card.active {
   opacity: 1;
-  max-height: 320px;
+  max-height: 600px;
+  overflow: visible;
   padding: 28px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1821,23 +1822,162 @@ body {
 
 /* ── Mobile Responsive ── */
 @media (max-width: 768px) {
+  .demo-showcase {
+    padding: 40px 16px 24px;
+  }
+
+  .demo-subtitle {
+    font-size: 0.92rem;
+    margin-bottom: 20px;
+    padding: 0 8px;
+  }
+
   .demo-stage {
     flex-direction: column;
-    gap: 32px;
+    gap: 16px;
+    align-items: center;
   }
 
   .demo-device {
-    width: 260px;
-    height: 480px;
+    width: 100%;
+    max-width: 300px;
+    height: 310px;
+    border-radius: 26px;
+    padding: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
   }
 
+  .demo-device-notch {
+    width: 60px;
+    height: 14px;
+    border-radius: 0 0 10px 10px;
+  }
+
+  .demo-device-screen {
+    border-radius: 20px;
+  }
+
+  /* Compact slide content on mobile */
+  .ds-header {
+    padding: 16px 12px 4px;
+    font-size: 0.62rem;
+  }
+
+  .ds-accel-viz {
+    padding: 4px 12px 8px;
+    gap: 4px;
+  }
+
+  .ds-wave-container {
+    min-height: 60px;
+    max-height: 72px;
+  }
+
+  .ds-accel-values {
+    font-size: 0.65rem;
+  }
+
+  .ds-magnitude-bar {
+    height: 6px;
+  }
+
+  .ds-magnitude-label {
+    font-size: 0.72rem;
+  }
+
+  .ds-alert-flash {
+    margin: 4px 8px;
+    padding: 6px 10px;
+    font-size: 0.68rem;
+  }
+
+  .ds-map-mock {
+    margin: 4px 8px 8px;
+  }
+
+  .ds-nav-warning-card {
+    padding: 6px 10px;
+  }
+
+  .ds-nav-info-bar {
+    padding: 6px 10px;
+    font-size: 0.6rem;
+  }
+
+  .ds-nav-instruction {
+    padding: 6px 10px;
+    font-size: 0.62rem;
+  }
+
+  .ds-admin-mock {
+    padding: 4px 8px 8px;
+    gap: 5px;
+  }
+
+  .ds-admin-stat {
+    padding: 6px 4px;
+  }
+
+  .ds-admin-stat-val {
+    font-size: 1.05rem;
+  }
+
+  .ds-table-row {
+    padding: 4px 8px;
+    font-size: 0.62rem;
+  }
+
+  .ds-export-btn {
+    padding: 5px;
+    font-size: 0.6rem;
+  }
+
+  /* Info panel adjustments on mobile */
   .demo-info-panel {
-    max-width: 100%;
+    max-width: 320px;
+    width: 100%;
     text-align: center;
+  }
+
+  .demo-info-card {
+    padding: 0 14px;
+  }
+
+  .demo-info-card.active {
+    padding: 16px 14px;
+    max-height: none;
+    border-radius: 18px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .demo-info-num {
+    font-size: 1.9rem;
+    margin-bottom: 2px;
+  }
+
+  .demo-info-card h4 {
+    font-size: 1rem;
+    margin-bottom: 6px;
+  }
+
+  .demo-info-card p {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    margin-bottom: 10px;
   }
 
   .demo-info-tags {
     justify-content: center;
+    gap: 5px;
+  }
+
+  .demo-tag {
+    font-size: 0.64rem;
+    padding: 2px 8px;
+  }
+
+  .demo-progress {
+    margin-top: 16px;
   }
 }
 
