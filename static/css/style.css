@@ -60,11 +60,59 @@ body {
   line-height: 1.6;
 }
 
-/* ── Animated Background ──────────────────────────────────────────── */
+/* ── 3D Animated Background Scene ─────────────────────────────────── */
+.bg-3d-scene {
+  position: fixed;
+  inset: -6%;
+  width: 112%;
+  height: 112%;
+  z-index: -3;
+  overflow: hidden;
+  perspective: 1200px;
+  pointer-events: none;
+}
+
+.bg-3d-image {
+  position: absolute;
+  inset: -50px;
+  background-image: url('/static/images/dashboard-bg.jpg');
+  background-size: cover;
+  background-position: center 30%;
+  background-repeat: no-repeat;
+  will-change: transform;
+  transform-style: preserve-3d;
+  animation: bg3dDrift 28s ease-in-out infinite alternate;
+  filter: saturate(1.15) brightness(0.96);
+  opacity: 0.38;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes bg3dDrift {
+  0% {
+    transform: scale(1.04) rotateX(1.8deg) rotateY(-2.5deg) translateY(0);
+  }
+  50% {
+    transform: scale(1.08) rotateX(-1.2deg) rotateY(1.8deg) translateY(-18px);
+  }
+  100% {
+    transform: scale(1.05) rotateX(2.2deg) rotateY(2.2deg) translateY(12px);
+  }
+}
+
+.bg-3d-vignette {
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(ellipse 90% 70% at 50% 35%, rgba(244, 247, 251, 0.40) 0%, rgba(244, 247, 251, 0.78) 55%, rgba(244, 247, 251, 0.94) 95%),
+    linear-gradient(to bottom, rgba(244, 247, 251, 0.45) 0%, rgba(244, 247, 251, 0.85) 50%, rgba(244, 247, 251, 0.98) 100%);
+  pointer-events: none;
+}
+
+/* ── Animated Background Mesh ─────────────────────────────────────── */
 .bg-mesh {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: -2;
   background:
     radial-gradient(ellipse 600px 600px at 20% 20%, rgba(5, 150, 105, 0.07) 0%, transparent 70%),
     radial-gradient(ellipse 500px 500px at 80% 80%, rgba(37, 99, 235, 0.06) 0%, transparent 70%),

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pathpulse-cache-v7';
+const CACHE_NAME = 'pathpulse-cache-v8';
 const ASSETS_TO_CACHE = [
   '/',
   '/map',
@@ -10,6 +10,7 @@ const ASSETS_TO_CACHE = [
   '/static/js/map.js',
   '/static/js/navigation.js',
   '/static/js/pwa-install.js',
+  '/static/images/dashboard-bg.jpg',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',

@@ -170,11 +170,48 @@ function initScrollReveal() {
 document.addEventListener('DOMContentLoaded', () => {
   loadStats();
   init3DCardTilt();
+  init3DBackgroundParallax();
   initScrollReveal();
   initDemoShowcase();
   // Auto-refresh stats every 30 seconds
   setInterval(loadStats, 30000);
 });
+
+// ── 3D Background Parallax Mouse Motion ────────────────────────────
+function init3DBackgroundParallax() {
+  const bgImg = document.querySelector('.bg-3d-image');
+  if (!bgImg) return;
+
+  // Real-time smooth 3D parallax on devices with a mouse or trackpad
+  if (window.matchMedia('(pointer: fine)').matches) {
+    let mouseX = 0;
+    let mouseY = 0;
+    let currentX = 0;
+    let currentY = 0;
+    let isMoving = false;
+
+    window.addEventListener('mousemove', (e) => {
+      mouseX = (e.clientX / window.innerWidth) - 0.5;
+      mouseY = (e.clientY / window.innerHeight) - 0.5;
+
+      if (!isMoving) {
+        isMoving = true;
+        requestAnimationFrame(() => {
+          currentX += (mouseX - currentX) * 0.1;
+          currentY += (mouseY - currentY) * 0.1;
+
+          const rotY = currentX * 6.5;
+          const rotX = -currentY * 4.5;
+          const transX = currentX * -22;
+          const transY = currentY * -16;
+
+          bgImg.style.transform = `scale(1.06) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg) translate3d(${transX.toFixed(1)}px, ${transY.toFixed(1)}px, 0)`;
+          isMoving = false;
+        });
+      }
+    }, { passive: true });
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // ANIMATED FEATURE SHOWCASE (Scroll-Triggered Auto-Play)
