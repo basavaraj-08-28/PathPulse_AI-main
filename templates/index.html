@@ -186,6 +186,189 @@
     </div>
   </section>
 
+  <!-- ── Animated Feature Showcase / Demo ────────────────────────── -->
+  <section class="demo-showcase" id="demo-showcase">
+    <h3>See <span class="gradient-text">PathPulse AI</span> in Action</h3>
+    <p class="demo-subtitle">Experience the full pothole detection &amp; navigation pipeline — from sensor to safe route.</p>
+
+    <div class="demo-stage">
+      <!-- Phone Device Mockup -->
+      <div class="demo-device">
+        <div class="demo-device-notch"></div>
+        <div class="demo-device-screen">
+
+          <!-- Slide 1: Real-Time Detection -->
+          <div class="demo-slide active" data-slide="0">
+            <div class="ds-header">
+              <span class="ds-status-dot live"></span>
+              <span class="ds-status-text">LIVE SCANNING</span>
+            </div>
+            <div class="ds-accel-viz">
+              <div class="ds-accel-label">Accelerometer</div>
+              <div class="ds-wave-container">
+                <svg class="ds-wave-svg" viewBox="0 0 280 80" preserveAspectRatio="none">
+                  <polyline class="ds-wave-line" points="" fill="none" stroke="url(#waveGrad)" stroke-width="2.5"/>
+                  <defs>
+                    <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#059669"/>
+                      <stop offset="50%" stop-color="#f59e0b"/>
+                      <stop offset="100%" stop-color="#ef4444"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <div class="ds-accel-values">
+                <span>X: <b class="ds-val-x">0.12</b></span>
+                <span>Y: <b class="ds-val-y">0.08</b></span>
+                <span>Z: <b class="ds-val-z">9.81</b></span>
+              </div>
+              <div class="ds-magnitude-bar">
+                <div class="ds-mag-fill" style="width: 12%"></div>
+              </div>
+              <div class="ds-magnitude-label"><span class="ds-mag-val">2.1</span> m/s&sup2;</div>
+            </div>
+            <div class="ds-alert-flash" style="display:none">
+              🚨 POTHOLE DETECTED — <b>HIGH</b>
+            </div>
+          </div>
+
+          <!-- Slide 2: Map & Hazard Pins -->
+          <div class="demo-slide" data-slide="1">
+            <div class="ds-header">
+              <span class="ds-status-dot map-active"></span>
+              <span class="ds-status-text">HAZARD MAP</span>
+            </div>
+            <div class="ds-map-mock">
+              <div class="ds-map-grid"></div>
+              <div class="ds-map-road ds-road-h"></div>
+              <div class="ds-map-road ds-road-v"></div>
+              <div class="ds-map-road ds-road-d"></div>
+              <div class="ds-map-pin pin-high" style="top:28%;left:35%"><span>🔴</span><div class="ds-pin-ring"></div></div>
+              <div class="ds-map-pin pin-med" style="top:52%;left:60%"><span>🟡</span><div class="ds-pin-ring"></div></div>
+              <div class="ds-map-pin pin-low" style="top:70%;left:28%"><span>🟢</span><div class="ds-pin-ring"></div></div>
+              <div class="ds-map-pin pin-high" style="top:38%;left:72%"><span>🔴</span><div class="ds-pin-ring"></div></div>
+              <div class="ds-map-pin pin-med" style="top:60%;left:45%"><span>🟡</span><div class="ds-pin-ring"></div></div>
+              <div class="ds-map-route"></div>
+              <div class="ds-map-vehicle">
+                <div class="ds-vehicle-puck"></div>
+                <div class="ds-vehicle-halo"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 3: Navigation Warning -->
+          <div class="demo-slide" data-slide="2">
+            <div class="ds-header">
+              <span class="ds-status-dot nav-active"></span>
+              <span class="ds-status-text">NAVIGATING</span>
+            </div>
+            <div class="ds-nav-mock">
+              <div class="ds-nav-road-perspective"></div>
+              <div class="ds-nav-warning-card">
+                <div class="ds-nav-warn-icon">⚠️</div>
+                <div class="ds-nav-warn-body">
+                  <div class="ds-nav-warn-title">🔴 HIGH Pothole</div>
+                  <div class="ds-nav-warn-dist">42 metres ahead</div>
+                </div>
+              </div>
+              <div class="ds-nav-info-bar">
+                <div class="ds-nav-speed"><b>38</b> km/h</div>
+                <div class="ds-nav-eta">ETA <b>12 min</b></div>
+                <div class="ds-nav-dist"><b>4.2</b> km</div>
+              </div>
+              <div class="ds-nav-instruction">
+                <span class="ds-nav-arrow">↗️</span>
+                <span>Turn right onto MG Road in <b>200m</b></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 4: Admin Dashboard -->
+          <div class="demo-slide" data-slide="3">
+            <div class="ds-header">
+              <span class="ds-status-dot admin-active"></span>
+              <span class="ds-status-text">ADMIN PANEL</span>
+            </div>
+            <div class="ds-admin-mock">
+              <div class="ds-admin-stats">
+                <div class="ds-admin-stat"><div class="ds-admin-stat-val ds-counter" data-target="32">0</div><div class="ds-admin-stat-lbl">Total</div></div>
+                <div class="ds-admin-stat"><div class="ds-admin-stat-val ds-counter" data-target="24">0</div><div class="ds-admin-stat-lbl">Active</div></div>
+                <div class="ds-admin-stat"><div class="ds-admin-stat-val ds-counter" data-target="8">0</div><div class="ds-admin-stat-lbl">Resolved</div></div>
+              </div>
+              <div class="ds-admin-table">
+                <div class="ds-table-header">
+                  <span>ID</span><span>Severity</span><span>Reports</span><span>Status</span>
+                </div>
+                <div class="ds-table-row"><span>#001</span><span class="ds-badge high">High</span><span>12</span><span class="ds-badge-active">Active</span></div>
+                <div class="ds-table-row"><span>#002</span><span class="ds-badge med">Medium</span><span>7</span><span class="ds-badge-active">Active</span></div>
+                <div class="ds-table-row"><span>#003</span><span class="ds-badge low">Low</span><span>3</span><span class="ds-badge-resolved">Resolved</span></div>
+                <div class="ds-table-row"><span>#004</span><span class="ds-badge high">High</span><span>15</span><span class="ds-badge-active">Active</span></div>
+              </div>
+              <div class="ds-admin-export">
+                <div class="ds-export-btn">📥 Export CSV</div>
+                <div class="ds-export-btn">📊 Export XLSX</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Feature Info Panel (right side) -->
+      <div class="demo-info-panel">
+        <div class="demo-info-card active" data-info="0">
+          <div class="demo-info-num">01</div>
+          <h4>📡 Real-Time Pothole Detection</h4>
+          <p>Your phone's accelerometer continuously scans the road surface at 50 Hz. When a vertical shock spike exceeds the threshold, PathPulse instantly detects and classifies the pothole severity.</p>
+          <div class="demo-info-tags">
+            <span class="demo-tag">Accelerometer</span>
+            <span class="demo-tag">AI Classification</span>
+            <span class="demo-tag">50 Hz Sampling</span>
+          </div>
+        </div>
+        <div class="demo-info-card" data-info="1">
+          <div class="demo-info-num">02</div>
+          <h4>🗺️ Live Hazard Map & Deduplication</h4>
+          <p>Every detection is geotagged and plotted on an interactive map with color-coded severity pins. Smart 3-meter GPS deduplication ensures each physical pothole is stored exactly once.</p>
+          <div class="demo-info-tags">
+            <span class="demo-tag">GPS Geotagging</span>
+            <span class="demo-tag">Haversine Engine</span>
+            <span class="demo-tag">Color Coded</span>
+          </div>
+        </div>
+        <div class="demo-info-card" data-info="2">
+          <div class="demo-info-num">03</div>
+          <h4>🚗 Pothole-Aware 3D Navigation</h4>
+          <p>Navigate with turn-by-turn voice guidance. The system warns you 50 metres before known road hazards with audio alerts and visual warning banners overlaid on the 3D tilted map.</p>
+          <div class="demo-info-tags">
+            <span class="demo-tag">Voice Alerts</span>
+            <span class="demo-tag">3D Camera Tilt</span>
+            <span class="demo-tag">50m Warning</span>
+          </div>
+        </div>
+        <div class="demo-info-card" data-info="3">
+          <div class="demo-info-num">04</div>
+          <h4>📊 Admin Dashboard & Export</h4>
+          <p>Road authorities can inspect, edit, resolve, and export the full pothole dataset into government-ready CSV and formatted Excel reports with charts, filters, and severity analysis.</p>
+          <div class="demo-info-tags">
+            <span class="demo-tag">CSV Export</span>
+            <span class="demo-tag">Excel Reports</span>
+            <span class="demo-tag">CRUD Admin</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress Dots -->
+    <div class="demo-progress">
+      <button class="demo-dot active" data-goto="0" aria-label="Detection"></button>
+      <button class="demo-dot" data-goto="1" aria-label="Map"></button>
+      <button class="demo-dot" data-goto="2" aria-label="Navigation"></button>
+      <button class="demo-dot" data-goto="3" aria-label="Admin"></button>
+    </div>
+    <div class="demo-progress-bar"><div class="demo-progress-fill"></div></div>
+  </section>
+
   <!-- ── Footer ──────────────────────────────────────────────────── -->
   <footer class="footer">
     <p>© 2026 <a href="/">PathPulse AI</a> — Making roads safer, one ride at a time.</p>
