@@ -177,21 +177,24 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// ANIMATED FEATURE SHOWCASE
+// ANIMATED FEATURE SHOWCASE (Scroll-Triggered Auto-Play)
 // ═══════════════════════════════════════════════════════════════════
 function initDemoShowcase() {
+  const showcaseSection = document.getElementById('demo-showcase');
   const slides = document.querySelectorAll('.demo-slide');
   const infos = document.querySelectorAll('.demo-info-card');
   const dots = document.querySelectorAll('.demo-dot');
   const progressFill = document.querySelector('.demo-progress-fill');
-  if (!slides.length) return;
+  if (!slides.length || !showcaseSection) return;
 
   let currentSlide = 0;
   const totalSlides = slides.length;
-  const slideDuration = 5000; // 5 seconds per slide
+  const slideDuration = 4500; // 4.5 seconds per slide
   let timer = null;
   let progressStart = null;
   let rafId = null;
+  let waveAnimFrame = null;
+  let isRunning = false;
 
   function goToSlide(index) {
     slides.forEach(s => s.classList.remove('active'));
@@ -204,14 +207,27 @@ function initDemoShowcase() {
     dots[currentSlide].classList.add('active');
 
     // Trigger slide-specific animations
-    if (currentSlide === 0) startWaveAnimation();
-    if (currentSlide === 3) animateAdminCounters();
+    if (currentSlide === 0) {
+      startWaveAnimation();
+    } else if (waveAnimFrame) {
+      cancelAnimationFrame(waveAnimFrame);
+      waveAnimFrame = null;
+    }
 
-    // Restart progress bar
+    if (currentSlide === 3) {
+      animateAdminCounters();
+    }
+
+    // Always run progress and cycle
     startProgress();
   }
 
   function nextSlide() {
+    // If element is off-screen, retry in 1s without killing the slider
+    if (!isElementInViewport(showcaseSection)) {
+      timer = setTimeout(nextSlide, 1000);
+      return;
+    }
     goToSlide((currentSlide + 1) % totalSlides);
   }
 
@@ -232,37 +248,26 @@ function initDemoShowcase() {
     timer = setTimeout(nextSlide, slideDuration);
   }
 
-  // Click on progress dots
+  // Click on dots: immediate jump, then auto-play continues
   dots.forEach(dot => {
     dot.addEventListener('click', () => {
       goToSlide(parseInt(dot.dataset.goto));
     });
   });
 
-  // Start
-  goToSlide(0);
-
-  // Pause on hover
-  const stage = document.querySelector('.demo-stage');
-  if (stage) {
-    stage.addEventListener('mouseenter', () => {
-      if (timer) clearTimeout(timer);
-      if (rafId) cancelAnimationFrame(rafId);
-    });
-    stage.addEventListener('mouseleave', () => {
-      startProgress();
-    });
+  // Check if showcase is in or near viewport
+  function isElementInViewport(el) {
+    const rect = el.getBoundingClientRect();
+    const windowHeight = (window.innerHeight || document.documentElement.clientHeight);
+    return (rect.top <= windowHeight * 0.9 && rect.bottom >= windowHeight * 0.1);
   }
 
   // ── Slide 1: Accelerometer Wave Animation ──
-  let waveAnimFrame = null;
-  let waveData = [];
   const waveLen = 60;
-  for (let i = 0; i < waveLen; i++) waveData.push(40);
+  let waveData = [];
 
   function startWaveAnimation() {
     if (waveAnimFrame) cancelAnimationFrame(waveAnimFrame);
-    const svg = document.querySelector('.ds-wave-svg');
     const polyline = document.querySelector('.ds-wave-line');
     const magFill = document.querySelector('.ds-mag-fill');
     const magVal = document.querySelector('.ds-mag-val');
@@ -272,66 +277,65 @@ function initDemoShowcase() {
     const alertFlash = document.querySelector('.ds-alert-flash');
     if (!polyline) return;
 
+    waveData = [];
+    for (let i = 0; i < waveLen; i++) waveData.push(40);
+
     let frame = 0;
-    let spikeAt = 90 + Math.floor(Math.random() * 40); // spike between frame 90-130
+    let spikeAt = 45; // Shock spike triggers at ~0.8s into slide
     let spiked = false;
+    if (alertFlash) alertFlash.style.display = 'none';
 
     function tick() {
-      frame++;
-      // Normal gentle road vibration
-      let dev = Math.abs(Math.sin(frame * 0.12) * 3 + (Math.random() - 0.5) * 2.5);
-
-      // Generate a dramatic spike
-      if (frame === spikeAt) {
-        dev = 24 + Math.random() * 8; // high severity spike
-        spiked = true;
-        if (alertFlash) {
-          alertFlash.style.display = 'block';
-          setTimeout(() => { if (alertFlash) alertFlash.style.display = 'none'; }, 2200);
-        }
-      } else if (frame === spikeAt + 1) {
-        dev = 14 + Math.random() * 5;
-      } else if (frame === spikeAt + 2) {
-        dev = 6 + Math.random() * 3;
+      if (currentSlide !== 0) {
+        if (waveAnimFrame) cancelAnimationFrame(waveAnimFrame);
+        return;
       }
 
-      // If we've gone well past the spike, reset for next cycle
-      if (frame > spikeAt + 80) {
-        frame = 0;
-        spikeAt = 90 + Math.floor(Math.random() * 40);
-        spiked = false;
+      frame++;
+      let dev = Math.abs(Math.sin(frame * 0.14) * 3.2 + (Math.random() - 0.5) * 2.2);
+
+      // Pothole impact spike
+      if (frame >= spikeAt && frame <= spikeAt + 4) {
+        dev = 26 + Math.random() * 6.5;
+        if (!spiked) {
+          spiked = true;
+          if (alertFlash) {
+            alertFlash.style.display = 'block';
+            setTimeout(() => { if (alertFlash) alertFlash.style.display = 'none'; }, 2000);
+          }
+        }
+      } else if (frame > spikeAt + 4 && frame <= spikeAt + 8) {
+        dev = 13 + Math.random() * 4;
+      } else if (frame > spikeAt + 8 && frame <= spikeAt + 14) {
+        dev = 5 + Math.random() * 2.5;
       }
 
       waveData.push(40 - (dev / 35) * 36);
       if (waveData.length > waveLen) waveData.shift();
 
-      // Build SVG points
       const w = 280;
-      const pts = waveData.map((y, i) => `${(i / (waveLen - 1)) * w},${y}`).join(' ');
+      const pts = waveData.map((y, i) => `${(i / (waveLen - 1)) * w},${y.toFixed(1)}`).join(' ');
       polyline.setAttribute('points', pts);
 
-      // Update values
       const magnitude = dev;
       const pct = Math.min(100, (magnitude / 35) * 100);
       if (magFill) {
         magFill.style.width = pct + '%';
-        if (magnitude > 25) magFill.style.background = 'linear-gradient(90deg, #f59e0b, #ef4444)';
-        else if (magnitude > 15) magFill.style.background = 'linear-gradient(90deg, #059669, #f59e0b)';
+        if (magnitude >= 25) magFill.style.background = 'linear-gradient(90deg, #f59e0b, #ef4444)';
+        else if (magnitude >= 15) magFill.style.background = 'linear-gradient(90deg, #059669, #f59e0b)';
         else magFill.style.background = 'linear-gradient(90deg, #059669, #059669)';
       }
       if (magVal) magVal.textContent = magnitude.toFixed(1);
       if (valX) valX.textContent = (Math.sin(frame * 0.08) * 1.2 + (Math.random() - 0.5) * 0.3).toFixed(2);
       if (valY) valY.textContent = (Math.cos(frame * 0.06) * 0.8 + (Math.random() - 0.5) * 0.2).toFixed(2);
-      if (valZ) valZ.textContent = (9.81 + (magnitude > 15 ? magnitude * 0.3 : (Math.random() - 0.5) * 0.15)).toFixed(2);
+      if (valZ) valZ.textContent = (9.81 + (magnitude > 15 ? magnitude * 0.35 : (Math.random() - 0.5) * 0.15)).toFixed(2);
 
-      if (currentSlide === 0) {
-        waveAnimFrame = requestAnimationFrame(tick);
-      }
+      waveAnimFrame = requestAnimationFrame(tick);
     }
     waveAnimFrame = requestAnimationFrame(tick);
   }
 
-  // ── Slide 4: Admin counter animation ──
+  // ── Slide 4: Admin Counter Animation ──
   function animateAdminCounters() {
     const counters = document.querySelectorAll('.ds-counter');
     counters.forEach(el => {
@@ -344,5 +348,35 @@ function initDemoShowcase() {
         el.textContent = current;
       }, 50);
     });
+  }
+
+  // ── Scroll & Visibility Trigger ──
+  function checkAndStart() {
+    if (isElementInViewport(showcaseSection)) {
+      if (!isRunning) {
+        isRunning = true;
+        // Start on Slide 1 automatically!
+        goToSlide(0);
+      }
+    }
+  }
+
+  // Immediate check on load (in case user refreshed while scrolled down)
+  checkAndStart();
+
+  // Window scroll and resize listeners (guaranteed on all mobile browsers)
+  window.addEventListener('scroll', checkAndStart, { passive: true });
+  window.addEventListener('resize', checkAndStart, { passive: true });
+
+  // IntersectionObserver as secondary trigger
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          checkAndStart();
+        }
+      });
+    }, { rootMargin: '80px 0px 80px 0px', threshold: 0.05 });
+    observer.observe(showcaseSection);
   }
 }
