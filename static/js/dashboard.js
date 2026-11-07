@@ -45,6 +45,12 @@ function renderCharts(stats) {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: {
+          animateScale: true,
+          animateRotate: true,
+          duration: 1300,
+          easing: 'easeOutQuart'
+        },
         plugins: {
           legend: {
             position: 'bottom',
@@ -79,6 +85,10 @@ function renderCharts(stats) {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: {
+          duration: 1100,
+          easing: 'easeOutQuart'
+        },
         scales: {
           x: {
             grid: { display: false },
@@ -107,14 +117,60 @@ function animateCounter(id, target) {
     if (current >= target) {
       current = target;
       clearInterval(interval);
+      // Tactile counter pop when target is reached
+      el.classList.remove('counter-pop');
+      void el.offsetWidth;
+      el.classList.add('counter-pop');
     }
     el.textContent = current;
   }, 30);
 }
 
+// ── Interactive 3D Parallax Card Tilt ──────────────────────────────
+function init3DCardTilt() {
+  const cards = document.querySelectorAll('.stat-card, .chart-card, .step-card');
+  cards.forEach(card => {
+    card.addEventListener('mousemove', (e) => {
+      const rect = card.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const rotateX = ((y - centerY) / centerY) * -6;
+      const rotateY = ((x - centerX) / centerX) * 6;
+      card.style.transform = `perspective(1000px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) translateY(-6px)`;
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = '';
+    });
+  });
+}
+
+// ── Smooth Scroll Reveal ──────────────────────────────────────────
+function initScrollReveal() {
+  if (!('IntersectionObserver' in window)) return;
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('revealed');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1 });
+
+  const targets = document.querySelectorAll('.stat-card, .chart-card, .step-card, .how-it-works h3');
+  targets.forEach((el, index) => {
+    el.classList.add('reveal-on-scroll');
+    el.style.transitionDelay = `${(index % 4) * 0.08}s`;
+    observer.observe(el);
+  });
+}
+
 // Initial Load
 document.addEventListener('DOMContentLoaded', () => {
-    loadStats();
-    // Auto-refresh stats every 30 seconds
-    setInterval(loadStats, 30000);
+  loadStats();
+  init3DCardTilt();
+  initScrollReveal();
+  // Auto-refresh stats every 30 seconds
+  setInterval(loadStats, 30000);
 });
