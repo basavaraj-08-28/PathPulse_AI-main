@@ -63,10 +63,10 @@ body {
 /* ── 3D Animated Background Scene ─────────────────────────────────── */
 .bg-3d-scene {
   position: fixed;
-  inset: -6%;
-  width: 112%;
-  height: 112%;
-  z-index: -3;
+  inset: -5%;
+  width: 110%;
+  height: 110%;
+  z-index: 0;
   overflow: hidden;
   perspective: 1200px;
   pointer-events: none;
@@ -74,17 +74,17 @@ body {
 
 .bg-3d-image {
   position: absolute;
-  inset: -50px;
-  background-image: url('/static/images/dashboard-bg.jpg');
+  inset: -60px;
+  background-image: url('../images/dashboard-bg.jpg');
   background-size: cover;
-  background-position: center 30%;
+  background-position: center 20%;
   background-repeat: no-repeat;
   will-change: transform;
   transform-style: preserve-3d;
-  animation: bg3dDrift 28s ease-in-out infinite alternate;
-  filter: saturate(1.15) brightness(0.96);
-  opacity: 0.38;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: bg3dDrift 22s ease-in-out infinite alternate;
+  filter: saturate(1.2) contrast(1.05) brightness(1.0);
+  opacity: 0.88;
+  transition: transform 0.25s ease-out;
 }
 
 @keyframes bg3dDrift {
@@ -92,7 +92,7 @@ body {
     transform: scale(1.04) rotateX(1.8deg) rotateY(-2.5deg) translateY(0);
   }
   50% {
-    transform: scale(1.08) rotateX(-1.2deg) rotateY(1.8deg) translateY(-18px);
+    transform: scale(1.09) rotateX(-1.2deg) rotateY(1.8deg) translateY(-18px);
   }
   100% {
     transform: scale(1.05) rotateX(2.2deg) rotateY(2.2deg) translateY(12px);
@@ -103,9 +103,21 @@ body {
   position: absolute;
   inset: 0;
   background: 
-    radial-gradient(ellipse 90% 70% at 50% 35%, rgba(244, 247, 251, 0.40) 0%, rgba(244, 247, 251, 0.78) 55%, rgba(244, 247, 251, 0.94) 95%),
-    linear-gradient(to bottom, rgba(244, 247, 251, 0.45) 0%, rgba(244, 247, 251, 0.85) 50%, rgba(244, 247, 251, 0.98) 100%);
+    radial-gradient(ellipse 95% 75% at 50% 30%, rgba(244, 247, 251, 0.15) 0%, rgba(244, 247, 251, 0.52) 55%, rgba(244, 247, 251, 0.85) 100%),
+    linear-gradient(to bottom, rgba(244, 247, 251, 0.12) 0%, rgba(244, 247, 251, 0.58) 50%, rgba(244, 247, 251, 0.92) 100%);
   pointer-events: none;
+}
+
+/* Ensure all page content stacks cleanly on top of 3D scene */
+.navbar,
+.hero,
+.stats-grid,
+.charts-grid,
+.how-it-works,
+.demo-showcase,
+.footer {
+  position: relative;
+  z-index: 2;
 }
 
 /* ── Animated Background Mesh ─────────────────────────────────────── */
