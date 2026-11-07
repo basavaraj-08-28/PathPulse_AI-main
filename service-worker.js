@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pathpulse-cache-v9';
+const CACHE_NAME = 'pathpulse-cache-v10';
 const ASSETS_TO_CACHE = [
   '/',
   '/map',
