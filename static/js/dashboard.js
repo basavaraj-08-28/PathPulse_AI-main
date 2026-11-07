@@ -189,7 +189,7 @@ function initDemoShowcase() {
 
   let currentSlide = 0;
   const totalSlides = slides.length;
-  const slideDuration = 4500; // 4.5 seconds per slide
+  const slideDuration = 5500; // 5.5 seconds per slide
   let timer = null;
   let progressStart = null;
   let rafId = null;
@@ -274,16 +274,23 @@ function initDemoShowcase() {
     const valX = document.querySelector('.ds-val-x');
     const valY = document.querySelector('.ds-val-y');
     const valZ = document.querySelector('.ds-val-z');
-    const alertFlash = document.querySelector('.ds-alert-flash');
+    const alertFlash = document.getElementById('ds-alert-flash') || document.querySelector('.ds-alert-flash');
+    const logMed = document.getElementById('ds-log-med');
+    const logHigh = document.getElementById('ds-log-high');
     if (!polyline) return;
 
     waveData = [];
     for (let i = 0; i < waveLen; i++) waveData.push(40);
 
     let frame = 0;
-    let spikeAt = 45; // Shock spike triggers at ~0.8s into slide
-    let spiked = false;
+    let medSpikeAt = 35;   // Event 1: Medium severity impact at ~0.6s
+    let highSpikeAt = 110; // Event 2: High severity crater impact at ~1.9s
+    let medTriggered = false;
+    let highTriggered = false;
+
     if (alertFlash) alertFlash.style.display = 'none';
+    if (logMed) logMed.classList.remove('visible');
+    if (logHigh) logHigh.classList.remove('visible');
 
     function tick() {
       if (currentSlide !== 0) {
@@ -292,22 +299,45 @@ function initDemoShowcase() {
       }
 
       frame++;
-      let dev = Math.abs(Math.sin(frame * 0.14) * 3.2 + (Math.random() - 0.5) * 2.2);
+      let dev = Math.abs(Math.sin(frame * 0.14) * 3.0 + (Math.random() - 0.5) * 2.0);
 
-      // Pothole impact spike
-      if (frame >= spikeAt && frame <= spikeAt + 4) {
-        dev = 26 + Math.random() * 6.5;
-        if (!spiked) {
-          spiked = true;
+      // Event 1: MEDIUM Severity Pothole (18 - 22 m/s²)
+      if (frame >= medSpikeAt && frame <= medSpikeAt + 4) {
+        dev = 19.4 + Math.random() * 2.6;
+        if (!medTriggered) {
+          medTriggered = true;
           if (alertFlash) {
+            alertFlash.className = 'ds-alert-flash alert-med';
+            alertFlash.innerHTML = '🟡 POTHOLE DETECTED &mdash; <b>MEDIUM</b> (19.4 m/s&sup2;)';
             alertFlash.style.display = 'block';
-            setTimeout(() => { if (alertFlash) alertFlash.style.display = 'none'; }, 2000);
           }
+          if (logMed) logMed.classList.add('visible');
         }
-      } else if (frame > spikeAt + 4 && frame <= spikeAt + 8) {
-        dev = 13 + Math.random() * 4;
-      } else if (frame > spikeAt + 8 && frame <= spikeAt + 14) {
-        dev = 5 + Math.random() * 2.5;
+      } else if (frame > medSpikeAt + 4 && frame <= medSpikeAt + 8) {
+        dev = 11 + Math.random() * 3;
+      } else if (frame > medSpikeAt + 8 && frame <= medSpikeAt + 12) {
+        dev = 6 + Math.random() * 2;
+      } else if (frame === medSpikeAt + 38) {
+        // Brief settle between the two potholes
+        if (alertFlash) alertFlash.style.display = 'none';
+      }
+
+      // Event 2: HIGH Severity Crater (27 - 33 m/s²)
+      if (frame >= highSpikeAt && frame <= highSpikeAt + 4) {
+        dev = 28.6 + Math.random() * 3.8;
+        if (!highTriggered) {
+          highTriggered = true;
+          if (alertFlash) {
+            alertFlash.className = 'ds-alert-flash alert-high';
+            alertFlash.innerHTML = '🚨 POTHOLE DETECTED &mdash; <b>HIGH</b> (28.6 m/s&sup2;)';
+            alertFlash.style.display = 'block';
+          }
+          if (logHigh) logHigh.classList.add('visible');
+        }
+      } else if (frame > highSpikeAt + 4 && frame <= highSpikeAt + 8) {
+        dev = 16 + Math.random() * 4;
+      } else if (frame > highSpikeAt + 8 && frame <= highSpikeAt + 14) {
+        dev = 7 + Math.random() * 3;
       }
 
       waveData.push(40 - (dev / 35) * 36);

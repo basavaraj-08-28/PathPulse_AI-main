@@ -9,7 +9,7 @@
     content="PathPulse AI uses your phone's accelerometer to detect patholes in real-time and maps them so every driver knows the road ahead.">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=6">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=7">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0f172a">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -227,8 +227,12 @@
               </div>
               <div class="ds-magnitude-label"><span class="ds-mag-val">2.1</span> m/s&sup2;</div>
             </div>
-            <div class="ds-alert-flash" style="display:none">
+            <div class="ds-alert-flash" id="ds-alert-flash" style="display:none">
               🚨 POTHOLE DETECTED — <b>HIGH</b>
+            </div>
+            <div class="ds-detect-log">
+              <span class="ds-log-item log-med" id="ds-log-med">🟡 Med: 19.4 m/s²</span>
+              <span class="ds-log-item log-high" id="ds-log-high">🔴 High: 28.6 m/s²</span>
             </div>
           </div>
 
@@ -319,10 +323,11 @@
         <div class="demo-info-card active" data-info="0">
           <div class="demo-info-num">01</div>
           <h4>📡 Real-Time Pothole Detection</h4>
-          <p>Your phone's accelerometer continuously scans the road surface at 50 Hz. When a vertical shock spike exceeds the threshold, PathPulse instantly detects and classifies the pothole severity.</p>
+          <p>Your phone's accelerometer continuously scans the road surface at 50 Hz. It detects and classifies road defects into <b>Medium</b> (15–25 m/s²) and <b>High</b> (&ge;25 m/s²) severity in real-time.</p>
           <div class="demo-info-tags">
             <span class="demo-tag">Accelerometer</span>
-            <span class="demo-tag">AI Classification</span>
+            <span class="demo-tag">🟡 Medium Severity</span>
+            <span class="demo-tag">🔴 High Severity</span>
             <span class="demo-tag">50 Hz Sampling</span>
           </div>
         </div>
@@ -374,7 +379,7 @@
     <p>© 2026 <a href="/">PathPulse AI</a> — Making roads safer, one ride at a time.</p>
   </footer>
 
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=6"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=7"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
